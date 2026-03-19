@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests for the Telegram webhook endpoint and router logic.
 """
 import asyncio
@@ -206,6 +206,8 @@ class TestKeyboards:
         assert BTN_CANCEL_PHOTOS in photo_texts
 
 
+
+
 class TestFSMStates:
     def test_states_exist_and_are_distinct(self):
         from app.telegram.states import PhotoUpload, VideoUpload
@@ -219,10 +221,10 @@ class TestFSMStates:
 class TestTelegramSender:
     def _mock_bot(self):
         bot = MagicMock()
-        bot.send_message = AsyncMock()
+        bot.send_message = AsyncMock(return_value=MagicMock(message_id=3))
         bot.send_video = AsyncMock()
         bot.send_document = AsyncMock()
-        bot.send_media_group = AsyncMock(return_value=[MagicMock(message_id=1), MagicMock(message_id=2)])
+        bot.send_media_group = AsyncMock(return_value=[MagicMock(message_id=1), MagicMock(message_id=2), MagicMock(message_id=4)])
         bot.delete_message = AsyncMock()
         bot.session = MagicMock()
         bot.session.close = AsyncMock()
@@ -248,8 +250,27 @@ class TestTelegramSender:
         with patch.object(telegram_sender, "_make_bot", return_value=self._mock_bot()):
             result = asyncio.run(broadcast_photos_to_group_with_ids(files, "25.3251_РЅРѕСЂРјР°_ifsh"))
 
-        assert result == [1, 2]
+        assert result == [1, 2, 3]
 
+    def test_broadcast_photos_sends_caption_as_separate_message(self, tmp_path):
+        from app.services import telegram_sender
+        from app.services.telegram_sender import broadcast_photos_to_group_with_ids
+
+        bot = self._mock_bot()
+        files = []
+        for index in range(3):
+            file_path = tmp_path / f"photo_{index}.jpg"
+            file_path.write_bytes(b"jpg")
+            files.append(file_path)
+
+        with patch.object(telegram_sender, "_make_bot", return_value=bot), patch.object(telegram_sender, "_is_mock_token", return_value=False):
+            result = asyncio.run(broadcast_photos_to_group_with_ids(files, "25.3251_норма_ifsh"))
+
+        assert result == [1, 2, 4, 3]
+        bot.send_media_group.assert_awaited_once()
+        media = bot.send_media_group.await_args.kwargs["media"]
+        assert all(getattr(item, "caption", None) is None for item in media)
+        bot.send_message.assert_awaited_once_with(chat_id=int(telegram_sender.settings.TELEGRAM_TARGET_CHAT_ID), text="25.3251_норма_ifsh")
 
 def _tg_message(
     user_id: int = 123456789,
@@ -340,6 +361,10 @@ def _make_mock_state(state_name=None, data=None):
     ctx.get_state = AsyncMock(return_value=state_name)
     ctx.get_data = AsyncMock(return_value=data or {})
     return ctx
+
+
+
+
 
 
 

@@ -109,7 +109,7 @@ async def broadcast_photos_to_group_with_ids(photo_paths: list[Path], code: str)
             "[MOCK Telegram] broadcast_photos_to_group_with_ids -> chat=%s | count=%d | code=%s",
             str(target)[:15], len(photo_paths), code,
         )
-        return list(range(1, len(photo_paths) + 1))
+        return list(range(1, len(photo_paths) + 2))
 
     bot = _make_bot()
     sent_message_ids: list[int] = []
@@ -117,17 +117,17 @@ async def broadcast_photos_to_group_with_ids(photo_paths: list[Path], code: str)
         chunk_size = 10
         for start in range(0, len(photo_paths), chunk_size):
             chunk = photo_paths[start:start + chunk_size]
-            media = []
-            for index, photo_path in enumerate(chunk):
-                caption = code if start == 0 and index == 0 else None
-                media.append(
-                    InputMediaDocument(
-                        media=BufferedInputFile(photo_path.read_bytes(), filename=photo_path.name),
-                        caption=caption,
-                    )
+            media = [
+                InputMediaDocument(
+                    media=BufferedInputFile(photo_path.read_bytes(), filename=photo_path.name),
                 )
+                for photo_path in chunk
+            ]
             messages = await bot.send_media_group(chat_id=int(target), media=media)
             sent_message_ids.extend(message.message_id for message in messages)
+
+        caption_message = await bot.send_message(chat_id=int(target), text=code)
+        sent_message_ids.append(caption_message.message_id)
         return sent_message_ids
     finally:
         await bot.session.close()

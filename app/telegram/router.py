@@ -1,7 +1,9 @@
-﻿"""
+"""
 Telegram bot handlers (aiogram v3 Router).
 """
 from __future__ import annotations
+
+import asyncio
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -39,6 +41,7 @@ logger = get_logger(__name__)
 router = Router()
 router.message.filter(F.chat.type == "private")
 router.callback_query.filter(F.message.chat.type == "private")
+_photo_state_locks: dict[str, asyncio.Lock] = {}
 
 
 def _is_allowed(user_id: int) -> bool:
@@ -48,6 +51,13 @@ def _is_allowed(user_id: int) -> bool:
 
 def _is_private_chat(message: Message) -> bool:
     return getattr(message.chat, "type", None) == "private"
+
+
+def _photo_lock(chat_id: int | str) -> asyncio.Lock:
+    key = str(chat_id)
+    if key not in _photo_state_locks:
+        _photo_state_locks[key] = asyncio.Lock()
+    return _photo_state_locks[key]
 
 
 def _is_image_document(message: Message) -> bool:
@@ -296,11 +306,12 @@ async def handle_video(message: Message, state: FSMContext) -> None:
 
 
 async def _store_photo_id(message: Message, state: FSMContext, file_id: str) -> None:
-    data = await state.get_data()
-    photo_file_ids = list(data.get("photo_file_ids", []))
-    photo_file_ids.append(file_id)
-    photo_count = len(photo_file_ids)
-    await state.update_data(photo_file_ids=photo_file_ids, photo_count=photo_count)
+    async with _photo_lock(message.chat.id):
+        data = await state.get_data()
+        photo_file_ids = list(data.get("photo_file_ids", []))
+        photo_file_ids.append(file_id)
+        photo_count = len(photo_file_ids)
+        await state.update_data(photo_file_ids=photo_file_ids, photo_count=photo_count)
     await message.answer(
         f"Фото додано: {photo_count}.\n"
         "Коли все буде готово, надішліть код окремим повідомленням.",
@@ -401,4 +412,5 @@ async def handle_unknown(message: Message) -> None:
         "Не розумію повідомлення. Скористайтесь меню нижче.",
         reply_markup=main_menu_keyboard(),
     )
+
 
