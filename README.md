@@ -43,4 +43,5 @@ Push changes to `main`. The self-hosted GitHub runner on the server will:
 2. install/update Python packages
 3. restart the bot services
 4. send a deploy notification to DEPLOY_NOTIFY_CHAT_ID when configured
+5. deploy notifications use the bot sender service
 
