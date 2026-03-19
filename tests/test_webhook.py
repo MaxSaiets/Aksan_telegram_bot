@@ -44,6 +44,27 @@ class TestWebhookEndpoint:
 
 
 class TestRouterHandlers:
+    def test_is_private_chat_helper(self):
+        from app.telegram.router import _is_private_chat
+
+        private_msg = _make_mock_message(chat_type="private")
+        group_msg = _make_mock_message(chat_id=-100123, chat_type="supergroup")
+
+        assert _is_private_chat(private_msg) is True
+        assert _is_private_chat(group_msg) is False
+
+    def test_cmd_start_ignores_group_chat(self):
+        from app.telegram.router import cmd_start
+
+        msg = _make_mock_message(chat_id=-100123, chat_type="supergroup")
+        state = _make_mock_state()
+
+        with patch("app.telegram.router._is_allowed", return_value=True):
+            asyncio.run(cmd_start(msg, state))
+
+        msg.answer.assert_not_awaited()
+        state.clear.assert_not_awaited()
+
     def test_cmd_start_sends_greeting(self):
         from app.telegram.router import cmd_start
 
@@ -278,6 +299,7 @@ def _make_mock_message(
     video=None,
     photo=None,
     caption=None,
+    chat_type="private",
 ):
     msg = MagicMock()
     msg.from_user = MagicMock()
@@ -285,6 +307,7 @@ def _make_mock_message(
     msg.from_user.first_name = "TestUser"
     msg.chat = MagicMock()
     msg.chat.id = chat_id or user_id
+    msg.chat.type = chat_type
     msg.message_id = 1
     msg.text = text
     msg.caption = caption
@@ -317,4 +340,6 @@ def _make_mock_state(state_name=None, data=None):
     ctx.get_state = AsyncMock(return_value=state_name)
     ctx.get_data = AsyncMock(return_value=data or {})
     return ctx
+
+
 

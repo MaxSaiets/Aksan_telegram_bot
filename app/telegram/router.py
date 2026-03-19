@@ -37,11 +37,17 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = Router()
+router.message.filter(F.chat.type == "private")
+router.callback_query.filter(F.message.chat.type == "private")
 
 
 def _is_allowed(user_id: int) -> bool:
     allowed = settings.allowed_users
     return not allowed or user_id in allowed
+
+
+def _is_private_chat(message: Message) -> bool:
+    return getattr(message.chat, "type", None) == "private"
 
 
 def _is_image_document(message: Message) -> bool:
@@ -55,6 +61,8 @@ def _is_image_document(message: Message) -> bool:
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext) -> None:
+    if not _is_private_chat(message):
+        return
     if not _is_allowed(message.from_user.id):
         logger.warning("Blocked user_id=%s (not in whitelist)", message.from_user.id)
         await message.answer("У вас немає доступу до цього бота.")
@@ -393,3 +401,4 @@ async def handle_unknown(message: Message) -> None:
         "Не розумію повідомлення. Скористайтесь меню нижче.",
         reply_markup=main_menu_keyboard(),
     )
+
