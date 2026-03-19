@@ -18,11 +18,6 @@ if (-not (Test-Path $pythonExe)) {
 
 Set-Location $projectRoot
 
-git config --global --add safe.directory $projectRoot
-$resolvedRoot = (Get-Item $projectRoot).Target
-if (-not $resolvedRoot) { $resolvedRoot = (Get-Item $projectRoot).FullName }
-git config --global --add safe.directory $resolvedRoot
-
 git fetch origin
 if ($LASTEXITCODE -ne 0) {
     throw 'git fetch failed'
@@ -41,4 +36,3 @@ Restart-Service aksan_bot_polling
 Restart-Service aksan_bot_worker
 
 Write-Host "Deploy completed successfully for $projectRoot."
-
