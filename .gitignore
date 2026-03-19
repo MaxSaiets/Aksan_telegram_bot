@@ -37,3 +37,6 @@ logs/
 # Celery
 celerybeat-schedule
 celerybeat.pid
+
+aksan_tel_yb_vido_bot.json
+.claude/
