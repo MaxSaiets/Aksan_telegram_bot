@@ -1,4 +1,4 @@
-"""
+﻿"""
 Tests for the Telegram webhook endpoint and router logic.
 """
 import asyncio
@@ -82,7 +82,7 @@ class TestRouterHandlers:
     def test_handle_video_dispatches_immediately(self):
         from app.telegram.router import handle_video
 
-        msg = _make_mock_message(video={"file_id": "tg_file_id_abc123"}, caption="20.8934_норма")
+        msg = _make_mock_message(video={"file_id": "tg_file_id_abc123"}, caption="20.8934_РЅРѕСЂРјР°")
         state = _make_mock_state(data={"queue_count": 0})
         mock_task = MagicMock()
         mock_task.id = "fake-task-id-abcdef"
@@ -94,7 +94,7 @@ class TestRouterHandlers:
         mock_pipeline.delay.assert_called_once_with(
             chat_id="123456789",
             file_id="tg_file_id_abc123",
-            caption="20.8934_норма",
+            caption="20.8934_РЅРѕСЂРјР°",
             message_id=1,
         )
         state.update_data.assert_awaited_once_with(queue_count=1)
@@ -126,7 +126,7 @@ class TestRouterHandlers:
     def test_handle_photo_code_dispatches_task(self):
         from app.telegram.router import handle_photo_code
 
-        msg = _make_mock_message(text="25.3251_норма_ifsh")
+        msg = _make_mock_message(text="25.3251_РЅРѕСЂРјР°_ifsh")
         state = _make_mock_state(data={"photo_file_ids": ["a", "b"]})
         mock_task = MagicMock()
         mock_task.id = "photo-task-id"
@@ -138,14 +138,14 @@ class TestRouterHandlers:
         mock_pipeline.delay.assert_called_once_with(
             chat_id="123456789",
             file_ids=["a", "b"],
-            code="25.3251_норма_ifsh",
+            code="25.3251_РЅРѕСЂРјР°_ifsh",
         )
         state.clear.assert_awaited_once()
 
     def test_delete_last_photos_button(self):
         from app.telegram.router import btn_delete_last_photos
 
-        msg = _make_mock_message(text="🗑 Видалити попереднє фото")
+        msg = _make_mock_message(text="рџ—‘ Р’РёРґР°Р»РёС‚Рё РїРѕРїРµСЂРµРґРЅС” С„РѕС‚Рѕ")
         with patch("app.telegram.router._is_allowed", return_value=True), \
              patch("app.telegram.router.get_last_batch", return_value={"target_chat_id": "-1001", "message_ids": [10, 11], "code": "26.2888"}), \
              patch("app.telegram.router.delete_messages", new_callable=AsyncMock) as mock_delete, \
@@ -225,7 +225,7 @@ class TestTelegramSender:
             files.append(file_path)
 
         with patch.object(telegram_sender, "_make_bot", return_value=self._mock_bot()):
-            result = asyncio.run(broadcast_photos_to_group_with_ids(files, "25.3251_норма_ifsh"))
+            result = asyncio.run(broadcast_photos_to_group_with_ids(files, "25.3251_РЅРѕСЂРјР°_ifsh"))
 
         assert result == [1, 2]
 
@@ -263,7 +263,7 @@ def _tg_callback(user_id: int = 123456789, data: str = "btn_confirm", message_id
                 "message_id": message_id,
                 "chat": {"id": user_id, "type": "private"},
                 "date": 1700000000,
-                "text": "Підтвердити?",
+                "text": "РџС–РґС‚РІРµСЂРґРёС‚Рё?",
             },
             "chat_instance": "ci_123",
             "data": data,
@@ -317,3 +317,4 @@ def _make_mock_state(state_name=None, data=None):
     ctx.get_state = AsyncMock(return_value=state_name)
     ctx.get_data = AsyncMock(return_value=data or {})
     return ctx
+
