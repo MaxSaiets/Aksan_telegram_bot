@@ -18,6 +18,8 @@ if (-not (Test-Path $pythonExe)) {
 
 Set-Location $projectRoot
 
+git config --global --add safe.directory $projectRoot
+
 git fetch origin
 if ($LASTEXITCODE -ne 0) {
     throw 'git fetch failed'
@@ -36,3 +38,4 @@ Restart-Service aksan_bot_polling
 Restart-Service aksan_bot_worker
 
 Write-Host "Deploy completed successfully for $projectRoot."
+
