@@ -9,7 +9,7 @@ from aiogram.types import (
 )
 
 BTN_SEND_VIDEO = "📤 Відправити відео"
-BTN_SEND_PHOTOS = "\U0001F4F7 ������ ����"
+BTN_SEND_PHOTOS = "\U0001F4F8 ������ ����"
 BTN_CANCEL_PHOTOS = "❌ Відмінити фото"
 BTN_DELETE_LAST_PHOTOS = "🗑 Видалити попереднє фото"
 BTN_UNDO_LAST = "↩️ Скасувати останнє відео"
