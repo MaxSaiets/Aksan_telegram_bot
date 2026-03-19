@@ -18,6 +18,9 @@ if (-not (Test-Path $pythonExe)) {
 
 Set-Location $projectRoot
 
+git config --system --add safe.directory $projectRoot
+git remote set-url origin https://github.com/MaxSaiets/Aksan_telegram_bot.git
+
 git fetch origin
 if ($LASTEXITCODE -ne 0) {
     throw 'git fetch failed'
