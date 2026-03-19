@@ -57,15 +57,15 @@ def _is_image_document(message: Message) -> bool:
 async def cmd_start(message: Message, state: FSMContext) -> None:
     if not _is_allowed(message.from_user.id):
         logger.warning("Blocked user_id=%s (not in whitelist)", message.from_user.id)
-        await message.answer("РЈ РІР°СЃ РЅРµРјР°С” РґРѕСЃС‚СѓРїСѓ РґРѕ С†СЊРѕРіРѕ Р±РѕС‚Р°.")
+        await message.answer("У вас немає доступу до цього бота.")
         return
 
     await state.clear()
-    name = message.from_user.first_name or "РєРѕСЂРёСЃС‚СѓРІР°С‡"
+    name = message.from_user.first_name or "користувач"
     await message.answer(
-        f"РџСЂРёРІС–С‚, {name}!\n\n"
-        "РЇ РІРјС–СЋ РѕР±СЂРѕР±Р»СЏС‚Рё РІС–РґРµРѕ С‚Р° С„РѕС‚Рѕ РґР»СЏ РІС–РґРїСЂР°РІРєРё РІ РіСЂСѓРїСѓ.\n"
-        "РћР±РµСЂС–С‚СЊ РїРѕС‚СЂС–Р±РЅСѓ РґС–СЋ РЅРёР¶С‡Рµ.",
+        f"Привіт, {name}!\n\n"
+        "Я вмію обробляти відео та фото для відправки в групу.\n"
+        "Оберіть потрібну дію нижче.",
         reply_markup=main_menu_keyboard(),
     )
 
@@ -75,7 +75,7 @@ async def btn_reset(message: Message, state: FSMContext) -> None:
     if not _is_allowed(message.from_user.id):
         return
     await state.clear()
-    await message.answer("РЎС‚Р°РЅ СЃРєРёРЅСѓС‚Рѕ.", reply_markup=main_menu_keyboard())
+    await message.answer("Стан скинуто.", reply_markup=main_menu_keyboard())
 
 
 @router.message(F.text == BTN_CANCEL_PHOTOS)
@@ -83,7 +83,7 @@ async def btn_cancel_photos(message: Message, state: FSMContext) -> None:
     if not _is_allowed(message.from_user.id):
         return
     await state.clear()
-    await message.answer("Р РµР¶РёРј С„РѕС‚Рѕ СЃРєР°СЃРѕРІР°РЅРѕ.", reply_markup=main_menu_keyboard())
+    await message.answer("Режим фото скасовано.", reply_markup=main_menu_keyboard())
 
 
 @router.message(F.text == BTN_DELETE_LAST_PHOTOS)
@@ -93,13 +93,16 @@ async def btn_delete_last_photos(message: Message) -> None:
 
     batch = get_last_batch(str(message.chat.id))
     if not batch:
-        await message.answer("РќРµРјР°С” РїРѕРїРµСЂРµРґРЅСЊРѕС— РїР°С‡РєРё С„РѕС‚Рѕ РґР»СЏ РІРёРґР°Р»РµРЅРЅСЏ.", reply_markup=main_menu_keyboard())
+        await message.answer(
+            "Немає попередньої пачки фото для видалення.",
+            reply_markup=main_menu_keyboard(),
+        )
         return
 
     await delete_messages(batch["target_chat_id"], batch.get("message_ids", []))
     clear_last_batch(str(message.chat.id))
     await message.answer(
-        f"РџРѕРїРµСЂРµРґРЅСЋ РїР°С‡РєСѓ С„РѕС‚Рѕ РґР»СЏ РєРѕРґСѓ {batch.get('code', '')} РІРёРґР°Р»РµРЅРѕ.",
+        f"Попередню пачку фото для коду {batch.get('code', '')} видалено.",
         reply_markup=main_menu_keyboard(),
     )
 
@@ -114,19 +117,22 @@ async def btn_undo_last(message: Message, state: FSMContext) -> None:
     chat_id = str(message.chat.id)
     last_video = get_last_done_by_chat(chat_id)
     if not last_video:
-        await message.answer("РќРµРјР°С” РѕР±СЂРѕР±Р»РµРЅРёС… РІС–РґРµРѕ РґР»СЏ СЃРєР°СЃСѓРІР°РЅРЅСЏ.", reply_markup=main_menu_keyboard())
+        await message.answer(
+            "Немає оброблених відео для скасування.",
+            reply_markup=main_menu_keyboard(),
+        )
         return
 
-    caption = last_video.get("caption", "Р±РµР· РїС–РґРїРёСЃСѓ")
+    caption = last_video.get("caption", "без підпису")
     preview = caption[:80] + ("..." if len(caption) > 80 else "")
-    youtube = last_video.get("youtube_url", "вЂ”")
+    youtube = last_video.get("youtube_url", "-")
     await state.update_data(undo_video_id=last_video["id"])
 
     await message.answer(
-        f"Р’РёРґР°Р»РёС‚Рё РѕСЃС‚Р°РЅРЅС” РІС–РґРµРѕ?\n\n"
-        f"В«{preview}В»\n"
+        f"Видалити останнє відео?\n\n"
+        f"«{preview}»\n"
         f"{youtube}\n\n"
-        f"Р¦Рµ РІРёРґР°Р»РёС‚СЊ РІС–РґРµРѕ Р· YouTube С‚Р° Р±Р°Р·Рё РґР°РЅРёС….",
+        "Це видалить відео з YouTube та бази даних.",
         reply_markup=undo_confirm_keyboard(),
     )
 
@@ -137,11 +143,11 @@ async def cb_undo_confirm(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     video_id = data.get("undo_video_id")
     if not video_id:
-        await callback.message.edit_text("Р’С–РґРµРѕ РґР»СЏ РІРёРґР°Р»РµРЅРЅСЏ РЅРµ Р·РЅР°Р№РґРµРЅРѕ.")
+        await callback.message.edit_text("Відео для видалення не знайдено.")
         return
 
     await state.update_data(undo_video_id=None)
-    await callback.message.edit_text("Р’РёРґР°Р»СЏСЋ РІС–РґРµРѕ Р· YouTube С‚Р° Р±Р°Р·Рё РґР°РЅРёС…...")
+    await callback.message.edit_text("Видаляю відео з YouTube та бази даних...")
 
     from app.tasks.undo_task import run_undo_last_video
 
@@ -152,7 +158,7 @@ async def cb_undo_confirm(callback: CallbackQuery, state: FSMContext) -> None:
 async def cb_undo_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.update_data(undo_video_id=None)
-    await callback.message.edit_text("Р’РёРґР°Р»РµРЅРЅСЏ СЃРєР°СЃРѕРІР°РЅРѕ.")
+    await callback.message.edit_text("Видалення скасовано.")
 
 
 @router.callback_query(F.data.startswith(CB_CANCEL_TASK))
@@ -166,15 +172,15 @@ async def cb_cancel_task(callback: CallbackQuery) -> None:
 
         result = AbortableAsyncResult(task_id, app=celery_app)
         if result.state in ("SUCCESS", "FAILURE"):
-            await callback.message.edit_text("Р¦СЋ Р·Р°РґР°С‡Сѓ РІР¶Рµ Р·Р°РІРµСЂС€РµРЅРѕ.")
+            await callback.message.edit_text("Цю задачу вже завершено.")
             return
 
         result.abort()
-        await callback.message.edit_text("РћР±СЂРѕР±РєСѓ РІС–РґРµРѕ СЃРєР°СЃРѕРІР°РЅРѕ.")
+        await callback.message.edit_text("Обробку відео скасовано.")
         logger.info("Task %s aborted by user", task_id[:8])
     except Exception as exc:
         logger.warning("Cancel task %s failed: %s", task_id[:8], exc)
-        await callback.message.edit_text(f"РќРµ РІРґР°Р»РѕСЃСЏ СЃРєР°СЃСѓРІР°С‚Рё: {exc}")
+        await callback.message.edit_text(f"Не вдалося скасувати: {exc}")
 
 
 @router.message(F.text == BTN_FILES)
@@ -182,8 +188,8 @@ async def btn_files(message: Message) -> None:
     if not _is_allowed(message.from_user.id):
         return
     await message.answer(
-        "РћР±РµСЂС–С‚СЊ С‚РёРї С„Р°Р№Р»Сѓ:\n\n"
-        "Р”Р»СЏ Р РѕР·РµС‚РєРё, РґР»СЏ СЃР°Р№С‚Сѓ Р°Р±Рѕ Р·РІС–С‚ .xlsx.",
+        "Оберіть тип файлу:\n\n"
+        "Для Розетки, для сайту або звіт .xlsx.",
         reply_markup=files_keyboard(),
     )
 
@@ -191,7 +197,7 @@ async def btn_files(message: Message) -> None:
 @router.callback_query(F.data == CB_FILES_ROZETKA)
 async def cb_files_rozetka(callback: CallbackQuery) -> None:
     await callback.answer()
-    await callback.message.edit_text("Р“РµРЅРµСЂСѓСЋ С„Р°Р№Р» РґР»СЏ Р РѕР·РµС‚РєРё...")
+    await callback.message.edit_text("Генерую файл для Розетки...")
     from app.tasks.files_task import run_generate_rozetka_file
 
     run_generate_rozetka_file.delay(chat_id=str(callback.message.chat.id))
@@ -200,7 +206,7 @@ async def cb_files_rozetka(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == CB_FILES_SITE)
 async def cb_files_site(callback: CallbackQuery) -> None:
     await callback.answer()
-    await callback.message.edit_text("Р“РµРЅРµСЂСѓСЋ С„Р°Р№Р» РґР»СЏ СЃР°Р№С‚Сѓ...")
+    await callback.message.edit_text("Генерую файл для сайту...")
     from app.tasks.files_task import run_generate_site_file
 
     run_generate_site_file.delay(chat_id=str(callback.message.chat.id))
@@ -209,7 +215,7 @@ async def cb_files_site(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == CB_FILES_REPORT)
 async def cb_files_report(callback: CallbackQuery) -> None:
     await callback.answer()
-    await callback.message.edit_text("Р“РµРЅРµСЂСѓСЋ Р·РІС–С‚...")
+    await callback.message.edit_text("Генерую звіт...")
     from app.tasks.export_task import run_export
 
     run_export.delay(chat_id=str(callback.message.chat.id))
@@ -228,8 +234,8 @@ async def btn_send_video(message: Message, state: FSMContext) -> None:
     await state.set_state(VideoUpload.waiting_video)
     await state.update_data(queue_count=0)
     await message.answer(
-        "РќР°РґС–С€Р»С–С‚СЊ РІС–РґРµРѕ Р· РїС–РґРїРёСЃРѕРј.\n"
-        "РњРѕР¶РЅР° РЅР°РґСЃРёР»Р°С‚Рё РєС–Р»СЊРєР° РІС–РґРµРѕ РїС–РґСЂСЏРґ, РІРѕРЅРё Р°РІС‚РѕРјР°С‚РёС‡РЅРѕ СЃС‚Р°РЅСѓС‚СЊ Сѓ С‡РµСЂРіСѓ.",
+        "Надішліть відео з підписом.\n"
+        "Можна надсилати кілька відео підряд, вони автоматично стануть у чергу.",
     )
 
 
@@ -240,10 +246,10 @@ async def btn_send_photos(message: Message, state: FSMContext) -> None:
     await state.set_state(PhotoUpload.waiting_photos)
     await state.update_data(photo_file_ids=[], photo_count=0)
     await message.answer(
-        "РќР°РґСЃРёР»Р°Р№С‚Рµ С„РѕС‚Рѕ РїРѕ РѕРґРЅРѕРјСѓ, Р°Р»СЊР±РѕРјРѕРј Р°Р±Рѕ СЏРє С„Р°Р№Р».\n"
-        "РљРѕР»Рё РІСЃС– С„РѕС‚Рѕ РґРѕРґР°РЅС–, РѕРєСЂРµРјРёРј РїРѕРІС–РґРѕРјР»РµРЅРЅСЏРј РЅР°РґС–С€Р»С–С‚СЊ РєРѕРґ, РЅР°РїСЂРёРєР»Р°Рґ:\n"
-        "<code>26.2888_РЅРѕСЂРјР°_РІС–Р°</code>\n\n"
-        "РЇ СЃС‚РёСЃРЅСѓ С„РѕС‚Рѕ РІ JPG, Р·РјРµРЅС€Сѓ РґРѕ РјР°РєСЃРёРјСѓРјСѓ 600x900 С– РІС–РґРїСЂР°РІР»СЋ РІ РіСЂСѓРїСѓ.",
+        "Надсилайте фото по одному, альбомом або як файл.\n"
+        "Коли всі фото додані, окремим повідомленням надішліть код, наприклад:\n"
+        "<code>26.2888_норма_віа</code>\n\n"
+        "Я стисну фото в JPG, зменшу до максимуму 600x900 і відправлю в групу.",
         parse_mode="HTML",
         reply_markup=photo_mode_keyboard(),
     )
@@ -274,8 +280,8 @@ async def handle_video(message: Message, state: FSMContext) -> None:
 
     preview = caption[:80] + ("..." if len(caption) > 80 else "")
     await message.answer(
-        f"Р’С–РґРµРѕ #{queue_count} РїСЂРёР№РЅСЏС‚Рѕ РІ С‡РµСЂРіСѓ.\n"
-        f"В«{preview}В»\n"
+        f"Відео #{queue_count} прийнято в чергу.\n"
+        f"«{preview}»\n"
         f"Task: {task.id[:8]}...",
         reply_markup=cancel_task_keyboard(task.id),
     )
@@ -288,8 +294,8 @@ async def _store_photo_id(message: Message, state: FSMContext, file_id: str) -> 
     photo_count = len(photo_file_ids)
     await state.update_data(photo_file_ids=photo_file_ids, photo_count=photo_count)
     await message.answer(
-        f"Р¤РѕС‚Рѕ РґРѕРґР°РЅРѕ: {photo_count}.\n"
-        "РљРѕР»Рё РІСЃРµ Р±СѓРґРµ РіРѕС‚РѕРІРѕ, РЅР°РґС–С€Р»С–С‚СЊ РєРѕРґ РѕРєСЂРµРјРёРј РїРѕРІС–РґРѕРјР»РµРЅРЅСЏРј.",
+        f"Фото додано: {photo_count}.\n"
+        "Коли все буде готово, надішліть код окремим повідомленням.",
         reply_markup=photo_mode_keyboard(),
     )
 
@@ -302,7 +308,7 @@ async def handle_photo(message: Message, state: FSMContext) -> None:
 @router.message(PhotoUpload.waiting_photos, F.document)
 async def handle_photo_document(message: Message, state: FSMContext) -> None:
     if not _is_image_document(message):
-        await message.answer("РћС‡С–РєСѓСЋ СЃР°РјРµ С„РѕС‚Рѕ Р°Р±Рѕ РєРѕРґ.", reply_markup=photo_mode_keyboard())
+        await message.answer("Очікую саме фото або код.", reply_markup=photo_mode_keyboard())
         return
     await _store_photo_id(message, state, message.document.file_id)
 
@@ -317,12 +323,12 @@ async def handle_photo_code(message: Message, state: FSMContext) -> None:
         return
     if not photo_file_ids:
         await message.answer(
-            "РЎРїРѕС‡Р°С‚РєСѓ РґРѕРґР°Р№С‚Рµ С…РѕС‡Р° Р± РѕРґРЅРµ С„РѕС‚Рѕ Р°Р±Рѕ С„РѕС‚Рѕ СЏРє С„Р°Р№Р».",
+            "Спочатку додайте хоча б одне фото або фото як файл.",
             reply_markup=photo_mode_keyboard(),
         )
         return
     if not code:
-        await message.answer("РќР°РґС–С€Р»С–С‚СЊ РЅРµРїРѕСЂРѕР¶РЅС–Р№ РєРѕРґ.", reply_markup=photo_mode_keyboard())
+        await message.answer("Надішліть непорожній код.", reply_markup=photo_mode_keyboard())
         return
 
     await state.clear()
@@ -335,7 +341,7 @@ async def handle_photo_code(message: Message, state: FSMContext) -> None:
         code=code,
     )
     await message.answer(
-        f"РџРѕС‡РёРЅР°СЋ РѕР±СЂРѕР±РєСѓ {len(photo_file_ids)} С„РѕС‚Рѕ РґР»СЏ РєРѕРґСѓ {code}.\n"
+        f"Починаю обробку {len(photo_file_ids)} фото для коду {code}.\n"
         f"Task: {task.id[:8]}...",
         reply_markup=main_menu_keyboard(),
     )
@@ -343,18 +349,18 @@ async def handle_photo_code(message: Message, state: FSMContext) -> None:
 
 @router.message(VideoUpload.waiting_video)
 async def handle_non_video_in_video_state(message: Message) -> None:
-    await message.answer("РћС‡С–РєСѓСЋ СЃР°РјРµ РІС–РґРµРѕ Р°Р±Рѕ РЅР°С‚РёСЃРЅС–С‚СЊ РџРµСЂРµР·Р°РІР°РЅС‚Р°Р¶РёС‚Рё.")
+    await message.answer("Очікую саме відео або натисніть Перезавантажити.")
 
 
 @router.message(PhotoUpload.waiting_photos)
 async def handle_non_photo_in_photo_state(message: Message) -> None:
-    await message.answer("РћС‡С–РєСѓСЋ С„РѕС‚Рѕ, С„РѕС‚Рѕ-С„Р°Р№Р» Р°Р±Рѕ С‚РµРєСЃС‚РѕРІРёР№ РєРѕРґ.", reply_markup=photo_mode_keyboard())
+    await message.answer("Очікую фото, фото-файл або текстовий код.", reply_markup=photo_mode_keyboard())
 
 
 @router.message(F.video)
 async def handle_unexpected_video(message: Message) -> None:
     await message.answer(
-        "РЎРїРѕС‡Р°С‚РєСѓ РЅР°С‚РёСЃРЅС–С‚СЊ В«Р’С–РґРїСЂР°РІРёС‚Рё РІС–РґРµРѕВ».",
+        "Спочатку натисніть «Відправити відео».",
         reply_markup=main_menu_keyboard(),
     )
 
@@ -362,7 +368,7 @@ async def handle_unexpected_video(message: Message) -> None:
 @router.message(F.photo)
 async def handle_unexpected_photo(message: Message) -> None:
     await message.answer(
-        "РЎРїРѕС‡Р°С‚РєСѓ РЅР°С‚РёСЃРЅС–С‚СЊ В«Р”РѕРґР°С‚Рё С„РѕС‚РѕВ».",
+        "Спочатку натисніть «Додати фото».",
         reply_markup=main_menu_keyboard(),
     )
 
@@ -370,11 +376,11 @@ async def handle_unexpected_photo(message: Message) -> None:
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     await message.answer(
-        "Р”РѕРІС–РґРєР°:\n\n"
-        "1. Р”Р»СЏ РІС–РґРµРѕ РЅР°С‚РёСЃРЅС–С‚СЊ В«Р’С–РґРїСЂР°РІРёС‚Рё РІС–РґРµРѕВ» С– РЅР°РґС–С€Р»С–С‚СЊ СЂРѕР»РёРє Р· РїС–РґРїРёСЃРѕРј.\n"
-        "2. Р”Р»СЏ С„РѕС‚Рѕ РЅР°С‚РёСЃРЅС–С‚СЊ В«Р”РѕРґР°С‚Рё С„РѕС‚РѕВ», РЅР°РґС–С€Р»С–С‚СЊ РєС–Р»СЊРєР° С„РѕС‚Рѕ, Р° РїРѕС‚С–Рј РѕРєСЂРµРјРѕ РєРѕРґ.\n"
-        "3. РљРЅРѕРїРєР° В«Р’С–РґРјС–РЅРёС‚Рё С„РѕС‚РѕВ» РІРёС…РѕРґРёС‚СЊ С–Р· СЂРµР¶РёРјСѓ С„РѕС‚Рѕ.\n"
-        "4. РљРЅРѕРїРєР° В«Р’РёРґР°Р»РёС‚Рё РїРѕРїРµСЂРµРґРЅС” С„РѕС‚РѕВ» РїСЂРёР±РёСЂР°С” РѕСЃС‚Р°РЅРЅСЋ РїР°С‡РєСѓ Р· РіСЂСѓРїРё.",
+        "Довідка:\n\n"
+        "1. Для відео натисніть «Відправити відео» і надішліть ролик з підписом.\n"
+        "2. Для фото натисніть «Додати фото», надішліть кілька фото, а потім окремо код.\n"
+        "3. Кнопка «Відмінити фото» виходить із режиму фото.\n"
+        "4. Кнопка «Видалити попереднє фото» прибирає останню пачку з групи.",
         reply_markup=main_menu_keyboard(),
     )
 
@@ -383,5 +389,7 @@ async def cmd_help(message: Message) -> None:
 async def handle_unknown(message: Message) -> None:
     if not _is_allowed(message.from_user.id):
         return
-    await message.answer("РќРµ СЂРѕР·СѓРјС–СЋ РїРѕРІС–РґРѕРјР»РµРЅРЅСЏ. РЎРєРѕСЂРёСЃС‚Р°Р№С‚РµСЃСЊ РјРµРЅСЋ РЅРёР¶С‡Рµ.", reply_markup=main_menu_keyboard())
-
+    await message.answer(
+        "Не розумію повідомлення. Скористайтесь меню нижче.",
+        reply_markup=main_menu_keyboard(),
+    )
