@@ -4,11 +4,34 @@ Upload videos to YouTube.
 - USE_MOCKS=false -> uses YouTube Data API v3 with OAuth2
 """
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from config import settings
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _extract_video_id(youtube_url: str) -> str | None:
+    parsed = urlparse((youtube_url or "").strip())
+
+    if not parsed.scheme and youtube_url:
+        text = youtube_url.strip()
+        if len(text) >= 6 and "/" not in text and "?" not in text:
+            return text
+        return None
+
+    if parsed.netloc in {"youtu.be", "www.youtu.be"}:
+        return parsed.path.strip("/") or None
+
+    if parsed.path == "/watch":
+        return parse_qs(parsed.query).get("v", [None])[0]
+
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) >= 2 and parts[0] in {"shorts", "live", "embed"}:
+        return parts[1]
+
+    return parse_qs(parsed.query).get("v", [None])[0]
 
 
 def delete_from_youtube(youtube_url: str) -> bool:
@@ -21,14 +44,11 @@ def delete_from_youtube(youtube_url: str) -> bool:
         return True
 
     import json
-    import re
 
-    match = re.search(r"[?&]v=([^&]+)", youtube_url or "")
-    if not match:
+    video_id = _extract_video_id(youtube_url)
+    if not video_id:
         logger.warning("Cannot extract video ID from URL: %s", youtube_url)
         return False
-
-    video_id = match.group(1)
     token_file = Path("token.json")
     if not token_file.exists():
         logger.warning("token.json not found - cannot delete from YouTube")
