@@ -40,3 +40,4 @@ celerybeat.pid
 
 aksan_tel_yb_vido_bot.json
 .claude/
+ngrok.exe
