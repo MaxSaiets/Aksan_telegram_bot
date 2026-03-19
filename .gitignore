@@ -1,0 +1,39 @@
+# Secrets
+.env
+client_secrets.json
+service_account.json
+token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Temp files
+tmp/
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.xlsx
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Logs
+logs/
+*.log
+
+# Mock DB
+*.db
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
