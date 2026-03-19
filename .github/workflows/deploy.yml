@@ -17,7 +17,7 @@ jobs:
           $projectRoot = if ($env:DEPLOY_PROJECT_ROOT) {
             $env:DEPLOY_PROJECT_ROOT
           } else {
-            'C:\Users\Администратор\Desktop\telegram_aksan_bot'
+            'C:\bots\telegram_aksan_bot'
           }
 
           $deployScript = Join-Path $projectRoot 'deploy.ps1'
