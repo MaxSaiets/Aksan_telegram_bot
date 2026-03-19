@@ -14,5 +14,15 @@ jobs:
       - name: Deploy on server
         shell: powershell
         run: |
-          Set-Location "C:\bots\telegram_aksan_bot"
-          .\deploy.ps1
+          $projectRoot = if ($env:DEPLOY_PROJECT_ROOT) {
+            $env:DEPLOY_PROJECT_ROOT
+          } else {
+            'C:\Users\Администратор\Desktop\telegram_aksan_bot'
+          }
+
+          $deployScript = Join-Path $projectRoot 'deploy.ps1'
+          if (-not (Test-Path $deployScript)) {
+            throw "deploy.ps1 not found: $deployScript"
+          }
+
+          & $deployScript
