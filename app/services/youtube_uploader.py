@@ -1,4 +1,4 @@
-"""
+﻿"""
 Upload videos to YouTube.
 - USE_MOCKS=true  -> returns a fake YouTube URL instantly
 - USE_MOCKS=false -> uses YouTube Data API v3 with OAuth2
@@ -14,6 +14,8 @@ from config import settings
 
 logger = get_logger(__name__)
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 YOUTUBE_UPLOAD_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
@@ -26,6 +28,15 @@ YOUTUBE_AUTH_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
 ]
+
+
+def _project_file(path_value: str | Path) -> Path:
+    path = Path(path_value)
+    return path if path.is_absolute() else _PROJECT_ROOT / path
+
+
+def _token_file() -> Path:
+    return _project_file("token.json")
 
 
 def _extract_video_id(youtube_url: str) -> str | None:
@@ -75,9 +86,9 @@ def delete_from_youtube(youtube_url: str) -> bool:
         logger.warning("Cannot extract video ID from URL: %s", youtube_url)
         return False
 
-    token_file = Path("token.json")
+    token_file = _token_file()
     if not token_file.exists():
-        logger.warning("token.json not found - cannot delete from YouTube")
+        logger.warning("token.json not found at %s - cannot delete from YouTube", token_file)
         return False
 
     try:
@@ -85,7 +96,8 @@ def delete_from_youtube(youtube_url: str) -> bool:
         missing = _missing_scopes(creds_data, YOUTUBE_DELETE_SCOPES)
         if missing:
             logger.error(
-                "token.json is missing delete scopes %s. Re-run scripts/youtube_auth.py to regenerate token.json",
+                "token.json at %s is missing delete scopes %s. Re-run scripts/youtube_auth.py to regenerate token.json",
+                token_file,
                 missing,
             )
             return False
@@ -131,13 +143,13 @@ def upload_to_youtube(
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaFileUpload
 
-    token_file = Path("token.json")
-    secrets_file = Path(settings.YOUTUBE_CLIENT_SECRETS_FILE)
+    token_file = _token_file()
+    secrets_file = _project_file(settings.YOUTUBE_CLIENT_SECRETS_FILE)
 
     if not token_file.exists() and not secrets_file.exists():
         logger.warning(
             "YouTube not configured (token.json and %s not found) - skipping upload",
-            settings.YOUTUBE_CLIENT_SECRETS_FILE,
+            secrets_file,
         )
         return "https://youtube.com/not-configured"
 
@@ -153,7 +165,7 @@ def upload_to_youtube(
         flow = InstalledAppFlow.from_client_secrets_file(str(secrets_file), YOUTUBE_AUTH_SCOPES)
         creds = flow.run_local_server(port=0)
         token_file.write_text(creds.to_json(), encoding="utf-8")
-        logger.info("YouTube token saved to token.json")
+        logger.info("YouTube token saved to %s", token_file)
 
     youtube = build("youtube", "v3", credentials=creds)
     request_body = {
