@@ -3,13 +3,29 @@ Upload videos to YouTube.
 - USE_MOCKS=true  -> returns a fake YouTube URL instantly
 - USE_MOCKS=false -> uses YouTube Data API v3 with OAuth2
 """
+from __future__ import annotations
+
+import json
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from config import settings
 from app.utils.logger import get_logger
+from config import settings
 
 logger = get_logger(__name__)
+
+YOUTUBE_UPLOAD_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
+YOUTUBE_DELETE_SCOPES = [
+    "https://www.googleapis.com/auth/youtube",
+]
+YOUTUBE_AUTH_SCOPES = [
+    "https://www.googleapis.com/auth/youtube",
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
 
 
 def _extract_video_id(youtube_url: str) -> str | None:
@@ -34,6 +50,17 @@ def _extract_video_id(youtube_url: str) -> str | None:
     return parse_qs(parsed.query).get("v", [None])[0]
 
 
+def _load_token_data(token_file: Path) -> dict:
+    return json.loads(token_file.read_text(encoding="utf-8"))
+
+
+def _missing_scopes(creds_data: dict, required_scopes: list[str]) -> list[str]:
+    token_scopes = set(creds_data.get("scopes") or [])
+    if not token_scopes:
+        return []
+    return [scope for scope in required_scopes if scope not in token_scopes]
+
+
 def delete_from_youtube(youtube_url: str) -> bool:
     """
     Delete a video from YouTube by its URL.
@@ -43,32 +70,37 @@ def delete_from_youtube(youtube_url: str) -> bool:
         logger.info("[MOCK YouTube] Pretending to delete: %s", youtube_url)
         return True
 
-    import json
-
     video_id = _extract_video_id(youtube_url)
     if not video_id:
         logger.warning("Cannot extract video ID from URL: %s", youtube_url)
         return False
+
     token_file = Path("token.json")
     if not token_file.exists():
         logger.warning("token.json not found - cannot delete from YouTube")
         return False
 
     try:
+        creds_data = _load_token_data(token_file)
+        missing = _missing_scopes(creds_data, YOUTUBE_DELETE_SCOPES)
+        if missing:
+            logger.error(
+                "token.json is missing delete scopes %s. Re-run scripts/youtube_auth.py to regenerate token.json",
+                missing,
+            )
+            return False
+
         import google.oauth2.credentials
         from google.auth.transport.requests import Request
         from googleapiclient.discovery import build
 
-        scopes = [
-            "https://www.googleapis.com/auth/youtube.upload",
-            "https://www.googleapis.com/auth/youtube",
-        ]
-
-        creds_data = json.loads(token_file.read_text())
-        creds = google.oauth2.credentials.Credentials.from_authorized_user_info(creds_data, scopes)
+        creds = google.oauth2.credentials.Credentials.from_authorized_user_info(
+            creds_data,
+            YOUTUBE_AUTH_SCOPES,
+        )
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            token_file.write_text(creds.to_json())
+            token_file.write_text(creds.to_json(), encoding="utf-8")
 
         youtube = build("youtube", "v3", credentials=creds)
         youtube.videos().delete(id=video_id).execute()
@@ -95,13 +127,10 @@ def upload_to_youtube(
         logger.info("[MOCK YouTube] Pretending to upload '%s' -> %s", title, url)
         return url
 
-    import json
-
     import google.oauth2.credentials
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaFileUpload
 
-    scopes = ["https://www.googleapis.com/auth/youtube.upload"]
     token_file = Path("token.json")
     secrets_file = Path(settings.YOUTUBE_CLIENT_SECRETS_FILE)
 
@@ -113,14 +142,17 @@ def upload_to_youtube(
         return "https://youtube.com/not-configured"
 
     if token_file.exists():
-        creds_data = json.loads(token_file.read_text())
-        creds = google.oauth2.credentials.Credentials.from_authorized_user_info(creds_data, scopes)
+        creds_data = _load_token_data(token_file)
+        creds = google.oauth2.credentials.Credentials.from_authorized_user_info(
+            creds_data,
+            YOUTUBE_UPLOAD_SCOPES,
+        )
     else:
         from google_auth_oauthlib.flow import InstalledAppFlow
 
-        flow = InstalledAppFlow.from_client_secrets_file(str(secrets_file), scopes)
+        flow = InstalledAppFlow.from_client_secrets_file(str(secrets_file), YOUTUBE_AUTH_SCOPES)
         creds = flow.run_local_server(port=0)
-        token_file.write_text(creds.to_json())
+        token_file.write_text(creds.to_json(), encoding="utf-8")
         logger.info("YouTube token saved to token.json")
 
     youtube = build("youtube", "v3", credentials=creds)

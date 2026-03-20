@@ -42,7 +42,10 @@ def run_undo_last_video(self, chat_id: str, video_id: str):
 
         if youtube_url and "not-configured" not in youtube_url:
             yt_ok = delete_from_youtube(youtube_url)
-            results.append(f"YouTube: {'видалено' if yt_ok else 'не вдалося видалити'}")
+            if yt_ok:
+                results.append("YouTube: видалено")
+            else:
+                results.append("YouTube: не вдалося видалити (перевірте token.json і перевидайте його через scripts/youtube_auth.py)")
         else:
             results.append("YouTube: відео не було завантажено")
 
