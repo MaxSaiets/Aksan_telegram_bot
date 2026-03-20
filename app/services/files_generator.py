@@ -1,10 +1,14 @@
 """
-Generate full snapshot Excel files for Rozetka video import and website video mapping.
+Generate incremental Excel files for Rozetka video import and website video mapping.
+A model/category is included only if its latest YouTube video was not reported before,
+or if the latest video changed since the last successful report.
 """
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 import pandas as pd
@@ -19,6 +23,42 @@ from app.utils.logger import get_logger
 from config import settings
 
 logger = get_logger(__name__)
+
+_ROZETKA_REPORT_STATE_PATH = Path("tmp/report_state/rozetka_latest.json")
+_SITE_REPORT_STATE_PATH = Path("tmp/report_state/site_latest.json")
+
+
+def _state_key(model: str, category: str) -> str:
+    return f"{model}::{category}"
+
+
+def _load_report_state(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return {str(key): str(value) for key, value in data.items()}
+    except Exception as exc:
+        logger.warning("Could not load report state %s: %s", path, exc)
+    return {}
+
+
+def _save_report_state(path: Path, state: dict[str, str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def _changed_video_map(video_map: dict[tuple[str, str], dict], state: dict[str, str]) -> dict[tuple[str, str], dict]:
+    changed: dict[tuple[str, str], dict] = {}
+    for key, video in video_map.items():
+        current_url = str(video.get("url", ""))
+        if current_url and state.get(_state_key(*key)) != current_url:
+            changed[key] = video
+    return changed
 
 
 def _fetch_all_rozetka_variants() -> list[dict]:
@@ -139,7 +179,9 @@ def generate_rozetka_file(on_progress: Callable[[str], None] | None = None) -> t
     _progress = on_progress or (lambda msg: None)
     _progress("[1/4] Завантажую всі відео з YouTube...")
     video_map = _latest_video_map()
-    _progress(f"[1/4] Знайдено {len(video_map)} актуальних model/category відео")
+    state = _load_report_state(_ROZETKA_REPORT_STATE_PATH)
+    changed_video_map = _changed_video_map(video_map, state)
+    _progress(f"[1/4] Нових або оновлених model/category: {len(changed_video_map)}")
 
     _progress("[2/4] Завантажую всі варіанти з Rozetka...")
     variants = _fetch_all_rozetka_variants()
@@ -147,9 +189,10 @@ def generate_rozetka_file(on_progress: Callable[[str], None] | None = None) -> t
     _progress(f"[2/4] Rozetka: {len(variants)} варіантів")
 
     rows: list[dict] = []
+    reported_state = dict(state)
 
     _progress("[3/4] Аналізую exact model/category і розкладаю відео по SKU...")
-    for (model, category), video in video_map.items():
+    for (model, category), video in changed_video_map.items():
         model_variants = grouped.get(model, [])
         available_sizes = {
             size
@@ -160,10 +203,12 @@ def generate_rozetka_file(on_progress: Callable[[str], None] | None = None) -> t
         if not allowed_sizes:
             continue
 
+        matched = False
         for variant in model_variants:
             if not variant_matches_category(variant["article"], category, available_sizes):
                 continue
 
+            matched = True
             rows.append({
                 "Код товару на ROZETKA": variant["rz_item_id"],
                 "Посилання на товар на сайті ROZETKA": variant["url"],
@@ -172,9 +217,12 @@ def generate_rozetka_file(on_progress: Callable[[str], None] | None = None) -> t
                 "Посилання на відео": video["url"],
             })
 
-    _progress(f"[3/4] Знайдено відповідностей: {len(rows)}")
+        if matched:
+            reported_state[_state_key(model, category)] = str(video["url"])
 
-    _progress("[4/4] Записую повний Excel snapshot...")
+    _progress(f"[3/4] Знайдено рядків для звіту: {len(rows)}")
+
+    _progress("[4/4] Записую Excel...")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = settings.temp_dir / f"rozetka_videos_{ts}.xlsx"
     df = pd.DataFrame(rows)
@@ -182,23 +230,30 @@ def generate_rozetka_file(on_progress: Callable[[str], None] | None = None) -> t
         df.to_excel(writer, index=False, sheet_name="Додавання відеоогляда")
         _autofit(writer.sheets["Додавання відеоогляда"], df)
 
+    if rows:
+        _save_report_state(_ROZETKA_REPORT_STATE_PATH, reported_state)
+
     logger.info("Rozetka file: %d rows -> %s", len(rows), out)
-    return out, len(rows)
+    return out, len(rows), len(changed_video_map)
 
 
 def generate_site_file(on_progress: Callable[[str], None] | None = None) -> tuple:
     _progress = on_progress or (lambda msg: None)
     _progress("[1/4] Завантажую всі відео з YouTube...")
     video_map = _latest_video_map()
+    state = _load_report_state(_SITE_REPORT_STATE_PATH)
+    changed_video_map = _changed_video_map(video_map, state)
+    _progress(f"[1/4] Нових або оновлених model/category: {len(changed_video_map)}")
 
     _progress("[2/4] Завантажую всі варіанти з Rozetka...")
     variants = _fetch_all_rozetka_variants()
     grouped = _variant_groups_by_model(variants)
 
     rows: list[dict] = []
+    reported_state = dict(state)
 
-    _progress("[3/4] Формую повний snapshot для всіх кольорів і різновидів...")
-    for (model, category), video in video_map.items():
+    _progress("[3/4] Формую звіт для нових моделей і оновлених відео...")
+    for (model, category), video in changed_video_map.items():
         model_variants = grouped.get(model, [])
         available_sizes = {
             size
@@ -208,19 +263,24 @@ def generate_site_file(on_progress: Callable[[str], None] | None = None) -> tupl
         if not available_sizes:
             continue
 
+        matched = False
         for variant in model_variants:
             article = variant["article"]
             if not variant_matches_category(article, category, available_sizes):
                 continue
 
+            matched = True
             rows.append({
                 "SKU": article,
                 "Посилання на відео": video["url"],
             })
 
-    _progress(f"[3/4] Знайдено відповідностей SKU: {len(rows)}")
+        if matched:
+            reported_state[_state_key(model, category)] = str(video["url"])
 
-    _progress("[4/4] Записую повний Excel snapshot...")
+    _progress(f"[3/4] Знайдено рядків для звіту: {len(rows)}")
+
+    _progress("[4/4] Записую Excel...")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = settings.temp_dir / f"site_videos_{ts}.xlsx"
     df = pd.DataFrame(rows)
@@ -228,5 +288,8 @@ def generate_site_file(on_progress: Callable[[str], None] | None = None) -> tupl
         df.to_excel(writer, index=False, sheet_name="Відео для сайту")
         _autofit(writer.sheets["Відео для сайту"], df)
 
+    if rows:
+        _save_report_state(_SITE_REPORT_STATE_PATH, reported_state)
+
     logger.info("Site file: %d rows -> %s", len(rows), out)
-    return out, len(rows)
+    return out, len(rows), len(changed_video_map)

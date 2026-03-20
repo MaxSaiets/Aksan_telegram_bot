@@ -32,13 +32,20 @@ def run_generate_rozetka_file(self, chat_id: str):
 
         from app.services.files_generator import generate_rozetka_file
 
-        path, count = generate_rozetka_file(on_progress=_progress)
+        path, count, changed_count = generate_rozetka_file(on_progress=_progress)
+
+        if changed_count == 0:
+            _run(send_text(
+                chat_id,
+                "✅ Нових моделей або оновлених відео для Rozetka немає.",
+                reply_markup=main_menu_keyboard(),
+            ))
+            return {"status": "empty"}
 
         if count == 0:
             _run(send_text(
                 chat_id,
-                "✅ Збігів для Rozetka не знайдено.\n"
-                "Відео з YouTube і товари з Rozetka були прочитані, але exact model/category не дали жодного допустимого SKU за поточними size rules.",
+                "✅ Нові моделі або оновлені відео знайдено, але exact model/category не дали жодного допустимого SKU за поточними size rules.",
                 reply_markup=main_menu_keyboard(),
             ))
             return {"status": "empty"}
@@ -85,13 +92,20 @@ def run_generate_site_file(self, chat_id: str):
 
         from app.services.files_generator import generate_site_file
 
-        path, count = generate_site_file(on_progress=_progress)
+        path, count, changed_count = generate_site_file(on_progress=_progress)
+
+        if changed_count == 0:
+            _run(send_text(
+                chat_id,
+                "✅ Нових моделей або оновлених відео для сайту немає.",
+                reply_markup=main_menu_keyboard(),
+            ))
+            return {"status": "empty"}
 
         if count == 0:
             _run(send_text(
                 chat_id,
-                "✅ Збігів для сайту не знайдено.\n"
-                "Відео з YouTube і товари з Rozetka були прочитані, але exact model/category не дали жодного допустимого SKU за поточними size rules.",
+                "✅ Нові моделі або оновлені відео знайдено, але exact model/category не дали жодного допустимого SKU за поточними size rules.",
                 reply_markup=main_menu_keyboard(),
             ))
             return {"status": "empty"}
