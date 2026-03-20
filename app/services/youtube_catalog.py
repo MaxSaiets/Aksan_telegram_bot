@@ -6,9 +6,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from config import settings
 from app.services.sku_parser import parse_video_caption
 from app.utils.logger import get_logger
+from config import settings
 
 logger = get_logger(__name__)
 

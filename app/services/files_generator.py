@@ -1,17 +1,14 @@
 """
-Generate Excel files for Rozetka video import and website video mapping.
+Generate full snapshot Excel files for Rozetka video import and website video mapping.
 """
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from datetime import datetime
-from pathlib import Path
 from typing import Callable
 
 import pandas as pd
 
-from config import settings
 from app.services.sku_parser import (
     allowed_sizes_for_category,
     extract_variant_size,
@@ -19,53 +16,9 @@ from app.services.sku_parser import (
 )
 from app.services.youtube_catalog import fetch_channel_videos
 from app.utils.logger import get_logger
+from config import settings
 
 logger = get_logger(__name__)
-
-_EXPORTED_ROZETKA_PATH = Path("tmp/exported_rozetka.json")
-_EXPORTED_SITE_PATH = Path("tmp/exported_site.json")
-
-
-def _load_exported(path: Path) -> set[str]:
-    if path.exists():
-        try:
-            return set(json.loads(path.read_text(encoding="utf-8")).get("ids", []))
-        except Exception:
-            pass
-    return set()
-
-
-def _save_exported(path: Path, new_ids: set[str]) -> None:
-    existing = _load_exported(path)
-    merged = existing | {str(item) for item in new_ids}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"ids": sorted(merged)}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-
-def _remove_from_exported(path: Path, ids_to_remove: set[str]) -> None:
-    existing = _load_exported(path)
-    cleaned = existing - {str(item) for item in ids_to_remove}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"ids": sorted(cleaned)}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-
-def remove_from_exported(sku: str, model_code: str) -> None:
-    base_model = model_code.split("_")[0] if "_" in model_code else model_code
-    _remove_from_exported(_EXPORTED_SITE_PATH, {base_model, sku})
-
-    try:
-        for variant in _fetch_all_rozetka_variants():
-            if variant.get("model") == base_model:
-                _remove_from_exported(_EXPORTED_ROZETKA_PATH, {str(variant["rz_item_id"])})
-                _remove_from_exported(_EXPORTED_SITE_PATH, {variant["article"]})
-    except Exception as exc:
-        logger.warning("Could not clean exported sets for model %s: %s", base_model, exc)
 
 
 def _fetch_all_rozetka_variants() -> list[dict]:
@@ -115,8 +68,9 @@ def _fetch_all_rozetka_variants() -> list[dict]:
             },
         ]
 
-    from app.services.rozetka import _ROZETKA_BASE  # noqa: PLC2701
     import httpx
+
+    from app.services.rozetka import _ROZETKA_BASE  # noqa: PLC2701
 
     headers = {"Authorization": f"Bearer {settings.ROZETKA_API_KEY}"}
     all_items: list[dict] = []
@@ -181,26 +135,25 @@ def _variant_groups_by_model(variants: list[dict]) -> dict[str, list[dict]]:
     return grouped
 
 
-def generate_rozetka_file(on_progress: Callable[[str], None] | None = None) -> tuple[Path, int]:
+def generate_rozetka_file(on_progress: Callable[[str], None] | None = None) -> tuple:
     _progress = on_progress or (lambda msg: None)
-    _progress("[1/4] Завантажую відео з YouTube...")
+    _progress("[1/4] Завантажую всі відео з YouTube...")
     video_map = _latest_video_map()
-    _progress(f"[1/4] Знайдено {len(video_map)} унікальних model/category відео")
+    _progress(f"[1/4] Знайдено {len(video_map)} актуальних model/category відео")
 
-    _progress("[2/4] Завантажую варіанти з Розетки...")
+    _progress("[2/4] Завантажую всі варіанти з Rozetka...")
     variants = _fetch_all_rozetka_variants()
     grouped = _variant_groups_by_model(variants)
-    _progress(f"[2/4] Розетка: {len(variants)} варіантів")
+    _progress(f"[2/4] Rozetka: {len(variants)} варіантів")
 
-    already = _load_exported(_EXPORTED_ROZETKA_PATH)
     rows: list[dict] = []
-    new_ids: set[str] = set()
 
-    _progress("[3/4] Підбираю варіанти за точним SKU і категорією...")
+    _progress("[3/4] Аналізую exact model/category і розкладаю відео по SKU...")
     for (model, category), video in video_map.items():
         model_variants = grouped.get(model, [])
         available_sizes = {
-            size for size in (extract_variant_size(item["article"]) for item in model_variants)
+            size
+            for size in (extract_variant_size(item["article"]) for item in model_variants)
             if size is not None
         }
         allowed_sizes = allowed_sizes_for_category(category, available_sizes)
@@ -208,9 +161,6 @@ def generate_rozetka_file(on_progress: Callable[[str], None] | None = None) -> t
             continue
 
         for variant in model_variants:
-            rz_id = str(variant["rz_item_id"])
-            if rz_id in already:
-                continue
             if not variant_matches_category(variant["article"], category, available_sizes):
                 continue
 
@@ -221,41 +171,38 @@ def generate_rozetka_file(on_progress: Callable[[str], None] | None = None) -> t
                 "Назва товару": variant["name_ua"],
                 "Посилання на відео": video["url"],
             })
-            new_ids.add(rz_id)
 
-    _progress(f"[3/4] Нових рядків: {len(rows)}")
+    _progress(f"[3/4] Знайдено відповідностей: {len(rows)}")
 
-    _progress("[4/4] Записую Excel...")
+    _progress("[4/4] Записую повний Excel snapshot...")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = settings.temp_dir / f"rozetka_videos_{ts}.xlsx"
     df = pd.DataFrame(rows)
     with pd.ExcelWriter(str(out), engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Добавление видеообзора")
-        _autofit(writer.sheets["Добавление видеообзора"], df)
+        df.to_excel(writer, index=False, sheet_name="Додавання відеоогляда")
+        _autofit(writer.sheets["Додавання відеоогляда"], df)
 
-    _save_exported(_EXPORTED_ROZETKA_PATH, new_ids)
-    logger.info("Rozetka file: %d new rows -> %s", len(rows), out)
+    logger.info("Rozetka file: %d rows -> %s", len(rows), out)
     return out, len(rows)
 
 
-def generate_site_file(on_progress: Callable[[str], None] | None = None) -> tuple[Path, int]:
+def generate_site_file(on_progress: Callable[[str], None] | None = None) -> tuple:
     _progress = on_progress or (lambda msg: None)
-    _progress("[1/4] Завантажую відео з YouTube...")
+    _progress("[1/4] Завантажую всі відео з YouTube...")
     video_map = _latest_video_map()
 
-    _progress("[2/4] Завантажую варіанти з Розетки...")
+    _progress("[2/4] Завантажую всі варіанти з Rozetka...")
     variants = _fetch_all_rozetka_variants()
     grouped = _variant_groups_by_model(variants)
 
-    already = _load_exported(_EXPORTED_SITE_PATH)
     rows: list[dict] = []
-    new_articles: set[str] = set()
 
-    _progress("[3/4] Формую рядки для всіх кольорів і різновидів...")
+    _progress("[3/4] Формую повний snapshot для всіх кольорів і різновидів...")
     for (model, category), video in video_map.items():
         model_variants = grouped.get(model, [])
         available_sizes = {
-            size for size in (extract_variant_size(item["article"]) for item in model_variants)
+            size
+            for size in (extract_variant_size(item["article"]) for item in model_variants)
             if size is not None
         }
         if not available_sizes:
@@ -263,8 +210,6 @@ def generate_site_file(on_progress: Callable[[str], None] | None = None) -> tupl
 
         for variant in model_variants:
             article = variant["article"]
-            if article in already:
-                continue
             if not variant_matches_category(article, category, available_sizes):
                 continue
 
@@ -272,11 +217,10 @@ def generate_site_file(on_progress: Callable[[str], None] | None = None) -> tupl
                 "SKU": article,
                 "Посилання на відео": video["url"],
             })
-            new_articles.add(article)
 
-    _progress(f"[3/4] Нових SKU: {len(rows)}")
+    _progress(f"[3/4] Знайдено відповідностей SKU: {len(rows)}")
 
-    _progress("[4/4] Записую Excel...")
+    _progress("[4/4] Записую повний Excel snapshot...")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = settings.temp_dir / f"site_videos_{ts}.xlsx"
     df = pd.DataFrame(rows)
@@ -284,6 +228,5 @@ def generate_site_file(on_progress: Callable[[str], None] | None = None) -> tupl
         df.to_excel(writer, index=False, sheet_name="Відео для сайту")
         _autofit(writer.sheets["Відео для сайту"], df)
 
-    _save_exported(_EXPORTED_SITE_PATH, new_articles)
-    logger.info("Site file: %d new rows -> %s", len(rows), out)
+    logger.info("Site file: %d rows -> %s", len(rows), out)
     return out, len(rows)

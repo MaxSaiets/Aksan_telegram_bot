@@ -18,6 +18,10 @@ def test_extract_category():
     assert extract_category("25.2834 супер ботал") == "супер ботал"
 
 
+def test_extract_category_with_suffix():
+    assert extract_category("25.2888_норма_aksan") == "норма"
+
+
 def test_extract_variant_size():
     assert extract_variant_size("25.2834_red_42(S)") == 42
     assert extract_variant_size("25.2834_black_56(3XL)") == 56

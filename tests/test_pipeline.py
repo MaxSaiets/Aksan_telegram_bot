@@ -97,3 +97,26 @@ class TestVideoPipeline:
             result = _run("123456789", "file_id_nomatch_1", "25.2834_норма")
 
         assert result["status"] == "done"
+
+    def test_pipeline_uploads_without_telegram_description(self, tmp_path):
+        source = tmp_path / "video.mp4"
+        source.write_bytes(b"video")
+        captured = {}
+
+        async def fake_download(file_id: str, chat_id=None, message_id=None):
+            return source
+
+        def fake_upload(video_path, title, description="", on_progress=None):
+            captured["title"] = title
+            captured["description"] = description
+            return "https://youtube.com/watch?v=testdesc"
+
+        with patch("app.tasks.video_pipeline.download_telegram_media", side_effect=fake_download), \
+             patch("app.tasks.video_pipeline.overlay_text", side_effect=lambda path, _: path), \
+             patch("app.tasks.video_pipeline.upload_to_youtube", side_effect=fake_upload), \
+             patch("app.tasks.video_pipeline.broadcast_to_group"):
+            result = _run("123456789", "file_id_desc_1", "25.2888_норма_aksan")
+
+        assert result["status"] == "done"
+        assert captured["title"] == "25.2888_норма_aksan"
+        assert captured["description"] == ""

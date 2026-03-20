@@ -3,10 +3,10 @@ Celery tasks: generate Rozetka / site video files and send to user via Telegram.
 """
 import asyncio
 
+from app.services.telegram_sender import send_document, send_text
 from app.tasks.celery_app import celery_app
-from app.utils.logger import get_logger
-from app.services.telegram_sender import send_text, send_document
 from app.telegram.keyboard import main_menu_keyboard
+from app.utils.logger import get_logger
 from config import settings
 
 logger = get_logger(__name__)
@@ -20,8 +20,6 @@ def _run(coro):
         loop.close()
 
 
-# ── Rozetka file ──────────────────────────────────────────────────────────────
-
 @celery_app.task(bind=True, max_retries=1)
 def run_generate_rozetka_file(self, chat_id: str):
     logger.info("Files/Rozetka START | chat=%s", chat_id[:12])
@@ -33,18 +31,19 @@ def run_generate_rozetka_file(self, chat_id: str):
                 pass
 
         from app.services.files_generator import generate_rozetka_file
+
         path, count = generate_rozetka_file(on_progress=_progress)
 
         if count == 0:
             _run(send_text(
                 chat_id,
-                "✅ Немає нових товарів для Розетки.\n"
-                "Усі знайдені відео вже були додані раніше.",
+                "✅ Збігів для Rozetka не знайдено.\n"
+                "Відео з YouTube і товари з Rozetka були прочитані, але exact model/category не дали жодного допустимого SKU за поточними size rules.",
                 reply_markup=main_menu_keyboard(),
             ))
             return {"status": "empty"}
 
-        caption = f"🛒 Файл для Розетки готовий: {count} нових товарів"
+        caption = f"🛒 Файл для Rozetka готовий: {count} рядків"
 
         if settings.USE_MOCKS:
             _run(send_text(
@@ -68,13 +67,11 @@ def run_generate_rozetka_file(self, chat_id: str):
         logger.exception("Files/Rozetka FAILED: %s", exc)
         _run(send_text(
             chat_id,
-            f"❌ Помилка генерації файлу для Розетки:\n{exc}",
+            f"❌ Помилка генерації файлу для Rozetka:\n{exc}",
             reply_markup=main_menu_keyboard(),
         ))
         raise self.retry(exc=exc)
 
-
-# ── Site file ─────────────────────────────────────────────────────────────────
 
 @celery_app.task(bind=True, max_retries=1)
 def run_generate_site_file(self, chat_id: str):
@@ -87,18 +84,19 @@ def run_generate_site_file(self, chat_id: str):
                 pass
 
         from app.services.files_generator import generate_site_file
+
         path, count = generate_site_file(on_progress=_progress)
 
         if count == 0:
             _run(send_text(
                 chat_id,
-                "✅ Немає нових SKU для сайту.\n"
-                "Усі знайдені відео вже були додані раніше.",
+                "✅ Збігів для сайту не знайдено.\n"
+                "Відео з YouTube і товари з Rozetka були прочитані, але exact model/category не дали жодного допустимого SKU за поточними size rules.",
                 reply_markup=main_menu_keyboard(),
             ))
             return {"status": "empty"}
 
-        caption = f"🌐 Файл для сайту готовий: {count} нових SKU"
+        caption = f"🌐 Файл для сайту готовий: {count} рядків"
 
         if settings.USE_MOCKS:
             _run(send_text(

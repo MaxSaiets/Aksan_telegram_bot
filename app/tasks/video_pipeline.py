@@ -157,7 +157,7 @@ def run_video_pipeline(self, chat_id: str, file_id: str, caption: str, message_i
         youtube_url = upload_to_youtube(
             local_path,
             title=caption or "Відео без підпису",
-            description=f"Завантажено через Telegram bot | Chat: {chat_id}",
+            description="",
         )
         logger.info("YouTube URL: %s", youtube_url)
 

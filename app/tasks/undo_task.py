@@ -3,9 +3,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.database.products_repo import get_products_for_video
 from app.database.videos_repo import delete_video, get_video
-from app.services.sku_parser import extract_model_code
 from app.services.telegram_sender import send_text
 from app.services.youtube_uploader import delete_from_youtube
 from app.tasks.celery_app import celery_app
@@ -48,26 +46,6 @@ def run_undo_last_video(self, chat_id: str, video_id: str):
         else:
             results.append("YouTube: відео не було завантажено")
 
-        products = get_products_for_video(video_id)
-        if products:
-            for product in products:
-                sku = product.get("sku")
-                model = product.get("model_name")
-                if sku or model:
-                    try:
-                        from app.services.files_generator import remove_from_exported
-                        remove_from_exported(sku or "", model or "")
-                    except Exception:
-                        pass
-        else:
-            model_code = extract_model_code(caption or "")
-            if model_code:
-                try:
-                    from app.services.files_generator import remove_from_exported
-                    remove_from_exported(model_code, model_code)
-                except Exception:
-                    pass
-
         delete_video(video_id)
         results.append("База даних: видалено")
 
@@ -83,10 +61,10 @@ def run_undo_last_video(self, chat_id: str, video_id: str):
         return {"status": "done", "video_id": video_id}
 
     except Exception as exc:
-        logger.exception("Undo FAILED | video_id=%s | %s", video_id, exc)
+        logger.exception("Undo FAILED: %s", exc)
         _run(send_text(
             chat_id,
-            f"❌ Помилка видалення відео:\n{exc}",
+            f"❌ Не вдалося видалити відео: {exc}",
             reply_markup=main_menu_keyboard(),
         ))
         raise self.retry(exc=exc)
