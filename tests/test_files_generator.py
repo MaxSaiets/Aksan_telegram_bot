@@ -27,42 +27,16 @@ def test_generate_rozetka_file_uses_latest_video_for_same_model_when_video_chang
         fg,
         "fetch_channel_videos",
         lambda: [
-            {
-                "video_id": "old1",
-                "title": "25.2888_норма_old",
-                "url": "https://www.youtube.com/watch?v=old1",
-                "model": "25.2888",
-                "category": "норма",
-                "published_at": "2026-03-19T09:00:00Z",
-            },
-            {
-                "video_id": "new1",
-                "title": "25.2888_норма_aksan",
-                "url": "https://www.youtube.com/watch?v=new1",
-                "model": "25.2888",
-                "category": "норма",
-                "published_at": "2026-03-20T09:00:00Z",
-            },
+            {"video_id": "old1", "title": "25.2888_норма_old", "url": "https://www.youtube.com/watch?v=old1", "model": "25.2888", "category": "норма", "published_at": "2026-03-19T09:00:00Z"},
+            {"video_id": "new1", "title": "25.2888_норма_aksan", "url": "https://www.youtube.com/watch?v=new1", "model": "25.2888", "category": "норма", "published_at": "2026-03-20T09:00:00Z"},
         ],
     )
     monkeypatch.setattr(
         fg,
         "_fetch_all_rozetka_variants",
         lambda: [
-            {
-                "rz_item_id": 1,
-                "article": "25.2888_black_40(S)",
-                "model": "25.2888",
-                "name_ua": "Сукня 40 чорна",
-                "url": "https://rozetka.com.ua/1/p1",
-            },
-            {
-                "rz_item_id": 2,
-                "article": "25.2888_black_42(M)",
-                "model": "25.2888",
-                "name_ua": "Сукня 42 чорна",
-                "url": "https://rozetka.com.ua/2/p2",
-            },
+            {"rz_item_id": 1, "article": "25.2888_black_40(S)", "model": "25.2888", "name_ua": "Сукня 40 чорна", "url": "https://rozetka.com.ua/1/p1"},
+            {"rz_item_id": 2, "article": "25.2888_black_42(M)", "model": "25.2888", "name_ua": "Сукня 42 чорна", "url": "https://rozetka.com.ua/2/p2"},
         ],
     )
 
@@ -88,42 +62,16 @@ def test_generate_site_file_only_returns_new_models_since_last_report(tmp_path, 
         fg,
         "fetch_channel_videos",
         lambda: [
-            {
-                "video_id": "v1111",
-                "title": "25.1111_норма_aksan",
-                "url": "https://www.youtube.com/watch?v=v1111",
-                "model": "25.1111",
-                "category": "норма",
-                "published_at": "2026-03-19T09:00:00Z",
-            },
-            {
-                "video_id": "v2222",
-                "title": "25.2222_норма_aksan",
-                "url": "https://www.youtube.com/watch?v=v2222",
-                "model": "25.2222",
-                "category": "норма",
-                "published_at": "2026-03-20T09:00:00Z",
-            },
+            {"video_id": "v1111", "title": "25.1111_норма_aksan", "url": "https://www.youtube.com/watch?v=v1111", "model": "25.1111", "category": "норма", "published_at": "2026-03-19T09:00:00Z"},
+            {"video_id": "v2222", "title": "25.2222_норма_aksan", "url": "https://www.youtube.com/watch?v=v2222", "model": "25.2222", "category": "норма", "published_at": "2026-03-20T09:00:00Z"},
         ],
     )
     monkeypatch.setattr(
         fg,
-        "_fetch_all_rozetka_variants",
+        "_fetch_all_site_variants",
         lambda: [
-            {
-                "rz_item_id": 1,
-                "article": "25.1111_black_40(S)",
-                "model": "25.1111",
-                "name_ua": "Сукня 1111",
-                "url": "https://rozetka.com.ua/1/p1",
-            },
-            {
-                "rz_item_id": 2,
-                "article": "25.2222_black_40(S)",
-                "model": "25.2222",
-                "name_ua": "Сукня 2222",
-                "url": "https://rozetka.com.ua/2/p2",
-            },
+            {"article": "25.1111_black_40(S)", "model": "25.1111", "name_ua": "Сукня 1111"},
+            {"article": "25.2222_black_40(S)", "model": "25.2222", "name_ua": "Сукня 2222"},
         ],
     )
 

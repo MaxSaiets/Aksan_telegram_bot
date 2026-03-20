@@ -13,6 +13,7 @@ from typing import Callable
 
 import pandas as pd
 
+from app.services.salesdrive import fetch_feed_variants
 from app.services.sku_parser import (
     allowed_sizes_for_category,
     extract_variant_size,
@@ -64,48 +65,12 @@ def _changed_video_map(video_map: dict[tuple[str, str], dict], state: dict[str, 
 def _fetch_all_rozetka_variants() -> list[dict]:
     if settings.USE_MOCKS:
         return [
-            {
-                "rz_item_id": 100001,
-                "article": "26.2873_red_40(S)",
-                "model": "26.2873",
-                "name_ua": "Костюм 40 червоний",
-                "url": "https://rozetka.com.ua/100001/p100001",
-            },
-            {
-                "rz_item_id": 100002,
-                "article": "26.2873_red_42(M)",
-                "model": "26.2873",
-                "name_ua": "Костюм 42 червоний",
-                "url": "https://rozetka.com.ua/100002/p100002",
-            },
-            {
-                "rz_item_id": 100003,
-                "article": "26.2873_black_44(L)",
-                "model": "26.2873",
-                "name_ua": "Костюм 44 чорний",
-                "url": "https://rozetka.com.ua/100003/p100003",
-            },
-            {
-                "rz_item_id": 100004,
-                "article": "26.2861_black_50(XL)",
-                "model": "26.2861",
-                "name_ua": "Костюм 50 чорний",
-                "url": "https://rozetka.com.ua/100004/p100004",
-            },
-            {
-                "rz_item_id": 100005,
-                "article": "26.2861_beige_52(2XL)",
-                "model": "26.2861",
-                "name_ua": "Костюм 52 бежевий",
-                "url": "https://rozetka.com.ua/100005/p100005",
-            },
-            {
-                "rz_item_id": 100006,
-                "article": "26.2630_grey_56(3XL)",
-                "model": "26.2630",
-                "name_ua": "Костюм 56 сірий",
-                "url": "https://rozetka.com.ua/100006/p100006",
-            },
+            {"rz_item_id": 100001, "article": "26.2873_red_40(S)", "model": "26.2873", "name_ua": "Костюм 40 червоний", "url": "https://rozetka.com.ua/100001/p100001"},
+            {"rz_item_id": 100002, "article": "26.2873_red_42(M)", "model": "26.2873", "name_ua": "Костюм 42 червоний", "url": "https://rozetka.com.ua/100002/p100002"},
+            {"rz_item_id": 100003, "article": "26.2873_black_44(L)", "model": "26.2873", "name_ua": "Костюм 44 чорний", "url": "https://rozetka.com.ua/100003/p100003"},
+            {"rz_item_id": 100004, "article": "26.2861_black_50(XL)", "model": "26.2861", "name_ua": "Костюм 50 чорний", "url": "https://rozetka.com.ua/100004/p100004"},
+            {"rz_item_id": 100005, "article": "26.2861_beige_52(2XL)", "model": "26.2861", "name_ua": "Костюм 52 бежевий", "url": "https://rozetka.com.ua/100005/p100005"},
+            {"rz_item_id": 100006, "article": "26.2630_grey_56(3XL)", "model": "26.2630", "name_ua": "Костюм 56 сірий", "url": "https://rozetka.com.ua/100006/p100006"},
         ]
 
     import httpx
@@ -146,6 +111,12 @@ def _fetch_all_rozetka_variants() -> list[dict]:
 
     logger.info("Rozetka: fetched %d variants total", len(all_items))
     return all_items
+
+
+def _fetch_all_site_variants() -> list[dict]:
+    variants = fetch_feed_variants()
+    logger.info("Site feed: fetched %d variants total", len(variants))
+    return variants
 
 
 def _autofit(ws, df: pd.DataFrame) -> None:
@@ -245,9 +216,10 @@ def generate_site_file(on_progress: Callable[[str], None] | None = None) -> tupl
     changed_video_map = _changed_video_map(video_map, state)
     _progress(f"[1/4] Нових або оновлених model/category: {len(changed_video_map)}")
 
-    _progress("[2/4] Завантажую всі варіанти з Rozetka...")
-    variants = _fetch_all_rozetka_variants()
+    _progress("[2/4] Завантажую фід сайту з SalesDrive...")
+    variants = _fetch_all_site_variants()
     grouped = _variant_groups_by_model(variants)
+    _progress(f"[2/4] Site feed: {len(variants)} варіантів")
 
     rows: list[dict] = []
     reported_state = dict(state)
