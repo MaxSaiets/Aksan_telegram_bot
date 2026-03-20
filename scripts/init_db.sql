@@ -4,16 +4,21 @@
 
 -- Videos (stores processed video records + deduplication key)
 CREATE TABLE IF NOT EXISTS videos (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    chat_id       VARCHAR(50) NOT NULL,
-    caption       TEXT,
-    original_url  TEXT,
-    youtube_url   TEXT,
-    status        VARCHAR(20) NOT NULL DEFAULT 'pending',
-    error_message TEXT,
-    created_at    TIMESTAMPTZ DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ DEFAULT NOW()
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chat_id           VARCHAR(50) NOT NULL,
+    caption           TEXT,
+    original_url      TEXT,
+    youtube_url       TEXT,
+    target_chat_id    VARCHAR(50),
+    target_message_id BIGINT,
+    status            VARCHAR(20) NOT NULL DEFAULT 'pending',
+    error_message     TEXT,
+    created_at        TIMESTAMPTZ DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS target_chat_id VARCHAR(50);
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS target_message_id BIGINT;
 
 -- Products (matched SKUs with Rozetka/SalesDrive cross-reference)
 CREATE TABLE IF NOT EXISTS products (
@@ -59,6 +64,7 @@ CREATE TABLE IF NOT EXISTS photo_items (
 CREATE INDEX IF NOT EXISTS idx_videos_status           ON videos(status);
 CREATE INDEX IF NOT EXISTS idx_videos_chat             ON videos(chat_id);
 CREATE INDEX IF NOT EXISTS idx_videos_orig_url         ON videos(original_url);
+CREATE INDEX IF NOT EXISTS idx_videos_target_message   ON videos(target_message_id);
 CREATE INDEX IF NOT EXISTS idx_products_sku            ON products(sku);
 CREATE INDEX IF NOT EXISTS idx_products_video          ON products(video_id);
 CREATE INDEX IF NOT EXISTS idx_photo_batches_model     ON photo_batches(model_code);

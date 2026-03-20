@@ -35,12 +35,18 @@ def set_processing(video_id: str) -> dict | None:
     return db_client.update("videos", {"id": video_id}, {"status": "processing"})
 
 
-def set_done(video_id: str, youtube_url: str) -> dict | None:
-    return db_client.update(
-        "videos",
-        {"id": video_id},
-        {"status": "done", "youtube_url": youtube_url},
-    )
+def set_done(
+    video_id: str,
+    youtube_url: str,
+    target_chat_id: str | None = None,
+    target_message_id: int | None = None,
+) -> dict | None:
+    payload = {"status": "done", "youtube_url": youtube_url}
+    if target_chat_id is not None:
+        payload["target_chat_id"] = str(target_chat_id)
+    if isinstance(target_message_id, int):
+        payload["target_message_id"] = target_message_id
+    return db_client.update("videos", {"id": video_id}, payload)
 
 
 def set_error(video_id: str, error_message: str) -> dict | None:
@@ -81,7 +87,7 @@ def find_duplicate(original_url: str) -> dict | None:
     """
     Check if this exact Telegram file_id was already successfully processed.
     Returns the existing video record, or None if not found.
-    Used for deduplication — avoids re-uploading the same video twice.
+    Used for deduplication - avoids re-uploading the same video twice.
     """
     rows = db_client.select("videos", {"original_url": original_url, "status": "done"})
     return rows[0] if rows else None

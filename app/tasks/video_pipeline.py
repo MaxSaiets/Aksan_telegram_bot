@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from config import settings
 from celery.contrib.abortable import AbortableTask
 
 from app.database.videos_repo import (
@@ -171,9 +172,9 @@ def run_video_pipeline(self, chat_id: str, file_id: str, caption: str, message_i
             return {"status": "cancelled", "video_id": video_id}
 
         _status(chat_id, 4, total_steps, "Надсилаю в цільову групу...")
-        _async(broadcast_to_group(processed_path, caption))
+        group_message_id = _async(broadcast_to_group(processed_path, caption))
 
-        set_done(video_id, youtube_url)
+        set_done(video_id, youtube_url, settings.TELEGRAM_TARGET_CHAT_ID, group_message_id)
         _notify(
             chat_id,
             f"✅ Готово!\n▶️ YouTube: {youtube_url}",

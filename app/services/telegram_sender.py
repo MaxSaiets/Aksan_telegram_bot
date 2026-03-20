@@ -1,4 +1,4 @@
-"""
+﻿"""
 Send messages and files to Telegram users/groups via aiogram Bot API.
 """
 from __future__ import annotations
@@ -48,22 +48,23 @@ async def send_text(
         await bot.session.close()
 
 
-async def send_video_file(chat_id: str | int, video_path: Path, caption: str = "") -> None:
+async def send_video_file(chat_id: str | int, video_path: Path, caption: str = "") -> int | None:
     if _is_mock_token():
         logger.info(
             "[MOCK Telegram] send_video_file -> %s | file=%s | caption=%s",
             str(chat_id)[:15], video_path.name, caption[:40],
         )
-        return
+        return 1
 
     bot = _make_bot()
     try:
         data = video_path.read_bytes()
-        await bot.send_video(
+        message = await bot.send_video(
             chat_id=int(chat_id),
             video=BufferedInputFile(data, filename=video_path.name),
             caption=caption,
         )
+        return message.message_id
     finally:
         await bot.session.close()
 
@@ -90,16 +91,16 @@ async def send_document(
         await bot.session.close()
 
 
-async def broadcast_to_group(video_path: Path, caption: str) -> None:
+async def broadcast_to_group(video_path: Path, caption: str) -> int | None:
     target = settings.TELEGRAM_TARGET_CHAT_ID
     if _is_mock_token():
         logger.info(
             "[MOCK Telegram] broadcast_to_group -> chat=%s | file=%s | caption=%s",
             str(target)[:15], video_path.name, caption[:60],
         )
-        return
+        return 1
 
-    await send_video_file(target, video_path, caption)
+    return await send_video_file(target, video_path, caption)
 
 
 async def broadcast_photos_to_group_with_ids(photo_paths: list[Path], code: str) -> list[int]:
@@ -133,14 +134,27 @@ async def broadcast_photos_to_group_with_ids(photo_paths: list[Path], code: str)
         await bot.session.close()
 
 
-async def delete_messages(chat_id: str | int, message_ids: list[int]) -> None:
+async def delete_messages(chat_id: str | int, message_ids: list[int]) -> dict[str, int]:
     if _is_mock_token():
         logger.info("[MOCK Telegram] delete_messages -> chat=%s | ids=%s", str(chat_id)[:15], message_ids)
-        return
+        return {"deleted": len(message_ids), "failed": 0}
 
     bot = _make_bot()
+    deleted = 0
+    failed = 0
     try:
         for message_id in message_ids:
-            await bot.delete_message(chat_id=int(chat_id), message_id=message_id)
+            try:
+                await bot.delete_message(chat_id=int(chat_id), message_id=message_id)
+                deleted += 1
+            except Exception as exc:
+                failed += 1
+                logger.warning(
+                    "Failed to delete Telegram message chat=%s message_id=%s: %s",
+                    str(chat_id)[:15],
+                    message_id,
+                    exc,
+                )
+        return {"deleted": deleted, "failed": failed}
     finally:
         await bot.session.close()

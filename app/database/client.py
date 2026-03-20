@@ -33,15 +33,17 @@ class _MockDBClient:
     def _create_tables(self):
         self._conn.executescript("""
             CREATE TABLE IF NOT EXISTS videos (
-                id            TEXT PRIMARY KEY,
-                chat_id       TEXT NOT NULL,
-                caption       TEXT,
-                original_url  TEXT,
-                youtube_url   TEXT,
-                status        TEXT DEFAULT 'pending',
-                error_message TEXT,
-                created_at    TEXT,
-                updated_at    TEXT
+                id                TEXT PRIMARY KEY,
+                chat_id           TEXT NOT NULL,
+                caption           TEXT,
+                original_url      TEXT,
+                youtube_url       TEXT,
+                target_chat_id    TEXT,
+                target_message_id INTEGER,
+                status            TEXT DEFAULT 'pending',
+                error_message     TEXT,
+                created_at        TEXT,
+                updated_at        TEXT
             );
 
             CREATE TABLE IF NOT EXISTS products (
@@ -82,7 +84,17 @@ class _MockDBClient:
                 created_at          TEXT NOT NULL
             );
         """)
+        self._ensure_column("videos", "target_chat_id", "TEXT")
+        self._ensure_column("videos", "target_message_id", "INTEGER")
         self._conn.commit()
+
+    def _ensure_column(self, table: str, column: str, ddl: str) -> None:
+        existing = {
+            row["name"]
+            for row in self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if column not in existing:
+            self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
