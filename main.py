@@ -1,5 +1,5 @@
 """
-Telegram Video Bot — FastAPI + aiogram v3
+Telegram Video Bot - FastAPI + aiogram v3.
 
 Architecture:
   - FastAPI handles the HTTP layer (webhook endpoint + health check)
@@ -7,25 +7,27 @@ Architecture:
   - Celery workers handle heavy tasks (download, FFmpeg, YouTube upload)
   - Redis stores FSM state (real mode) or MemoryStorage (mock mode)
 """
-import uvicorn
-from contextlib import asynccontextmanager
+from __future__ import annotations
 
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import uvicorn
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Update
 
 from config import settings
-from app.utils.logger import get_logger
-from app.telegram.router import router as telegram_router
 from app.database.client import db_client
+from app.database.photo_library_repo import photo_library_repo
+from app.telegram.router import router as telegram_router
+from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-
-# ── Bot & Dispatcher ──────────────────────────────────────────────────────────
 
 def _make_storage():
     """Use MemoryStorage in mock mode (no Redis needed), RedisStorage in production."""
@@ -40,12 +42,11 @@ dp = Dispatcher(storage=_make_storage())
 dp.include_router(telegram_router)
 
 
-# ── Lifespan ──────────────────────────────────────────────────────────────────
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Telegram Video Bot (USE_MOCKS=%s)", settings.USE_MOCKS)
     db_client.init()
+    photo_library_repo.init()
 
     if not settings.USE_MOCKS:
         webhook_url = f"{settings.TELEGRAM_WEBHOOK_URL.rstrip('/')}/webhook"
@@ -57,7 +58,7 @@ async def lifespan(app: FastAPI):
         info = await bot.get_webhook_info()
         logger.info("Webhook registered: %s (pending=%d)", info.url, info.pending_update_count)
     else:
-        logger.info("Mock mode — webhook not registered (use polling or send mock requests)")
+        logger.info("Mock mode - webhook not registered (use polling or send mock requests)")
 
     yield
 
@@ -67,16 +68,12 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Telegram Video Bot")
 
 
-# ── FastAPI app ───────────────────────────────────────────────────────────────
-
 app = FastAPI(
     title="Telegram Video Bot",
     version="2.0.0",
     lifespan=lifespan,
 )
 
-
-# ── Webhook endpoint ──────────────────────────────────────────────────────────
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request) -> Response:
@@ -85,11 +82,10 @@ async def telegram_webhook(request: Request) -> Response:
     In real mode, verify the X-Telegram-Bot-Api-Secret-Token header.
     Always returns 200 so Telegram doesn't retry on processing errors.
     """
-    # Signature verification (skipped in mock mode)
     if not settings.USE_MOCKS:
         secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
         if secret != settings.TELEGRAM_WEBHOOK_SECRET:
-            logger.warning("Invalid Telegram webhook secret — rejected")
+            logger.warning("Invalid Telegram webhook secret - rejected")
             return Response(status_code=403)
 
     try:
@@ -107,7 +103,84 @@ async def health() -> JSONResponse:
     return JSONResponse({"status": "ok", "mocks": settings.USE_MOCKS})
 
 
-# ── Dev entrypoint ────────────────────────────────────────────────────────────
+def _photo_payload(row: dict) -> dict:
+    file_path = Path(row["archive_path"])
+    return {
+        **row,
+        "file_exists": file_path.exists(),
+        "file_size": file_path.stat().st_size if file_path.exists() else None,
+        "download_url": f"/api/photo-library/photos/{row['id']}/download",
+    }
+
+
+@app.get("/api/photo-library/models")
+async def api_photo_models() -> JSONResponse:
+    items = photo_library_repo.list_models()
+    return JSONResponse({"count": len(items), "items": items})
+
+
+@app.get("/api/photo-library/batches")
+async def api_photo_batches(
+    model_code: str | None = Query(default=None),
+    code: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> JSONResponse:
+    items = photo_library_repo.list_batches(model_code=model_code, code=code, limit=limit)
+    return JSONResponse({"count": len(items), "items": items})
+
+
+@app.get("/api/photo-library/batches/{batch_id}")
+async def api_photo_batch(batch_id: str) -> JSONResponse:
+    batch = photo_library_repo.get_batch(batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Photo batch not found")
+
+    photos = [
+        _photo_payload(item)
+        for item in photo_library_repo.list_photos(batch_id=batch_id, limit=1000)
+    ]
+    return JSONResponse({"batch": batch, "photos": photos})
+
+
+@app.get("/api/photo-library/photos")
+async def api_photo_items(
+    model_code: str | None = Query(default=None),
+    code: str | None = Query(default=None),
+    batch_id: str | None = Query(default=None),
+    limit: int = Query(default=500, ge=1, le=2000),
+) -> JSONResponse:
+    items = [
+        _photo_payload(item)
+        for item in photo_library_repo.list_photos(
+            model_code=model_code,
+            code=code,
+            batch_id=batch_id,
+            limit=limit,
+        )
+    ]
+    return JSONResponse({"count": len(items), "items": items})
+
+
+@app.get("/api/photo-library/photos/{photo_id}")
+async def api_photo_item(photo_id: str) -> JSONResponse:
+    item = photo_library_repo.get_photo(photo_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return JSONResponse(_photo_payload(item))
+
+
+@app.get("/api/photo-library/photos/{photo_id}/download")
+async def api_photo_download(photo_id: str) -> FileResponse:
+    item = photo_library_repo.get_photo(photo_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    file_path = Path(item["archive_path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Archived photo file not found")
+
+    return FileResponse(path=file_path, media_type="image/jpeg", filename=item["filename"])
+
 
 if __name__ == "__main__":
     uvicorn.run(
