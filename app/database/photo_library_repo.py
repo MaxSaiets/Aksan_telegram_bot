@@ -1,14 +1,13 @@
-"""Append-only photo library backed by local SQLite and archived JPG files."""
+"""Append-only photo library metadata stored via db_client, with JPG files archived locally."""
 from __future__ import annotations
 
 import shutil
-import sqlite3
-import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.database.client import db_client
 from app.services.photo_processor import sanitize_code
 from app.services.sku_parser import extract_category, extract_model_code
 from app.utils.logger import get_logger
@@ -19,72 +18,12 @@ logger = get_logger(__name__)
 class PhotoLibraryRepo:
     """Store processed photo batches for later lookup and API access."""
 
-    def __init__(
-        self,
-        db_path: Path | str = Path("tmp/photo_library.db"),
-        library_root: Path | str = Path("tmp/photo_library"),
-    ):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: Path | str | None = None, library_root: Path | str = Path("tmp/photo_library")):
+        self.db_path = Path(db_path) if db_path is not None else None
         self.library_root = Path(library_root)
-        self._conn: sqlite3.Connection | None = None
-        self._lock = threading.Lock()
 
     def init(self) -> None:
-        with self._lock:
-            if self._conn is not None:
-                return
-
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            self.library_root.mkdir(parents=True, exist_ok=True)
-            self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-            self._conn.row_factory = sqlite3.Row
-            self._conn.execute("PRAGMA foreign_keys = ON")
-            self._conn.execute("PRAGMA journal_mode = WAL")
-            self._create_tables()
-            logger.info("Photo library ready at %s", self.db_path)
-
-    def _ensure_init(self) -> None:
-        if self._conn is None:
-            self.init()
-
-    def _create_tables(self) -> None:
-        self._conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS photo_batches (
-                id                  TEXT PRIMARY KEY,
-                source_chat_id      TEXT NOT NULL,
-                target_chat_id      TEXT NOT NULL,
-                code                TEXT NOT NULL,
-                model_code          TEXT,
-                category            TEXT,
-                caption_message_id  INTEGER,
-                photo_count         INTEGER NOT NULL,
-                created_at          TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS photo_items (
-                id                  TEXT PRIMARY KEY,
-                batch_id            TEXT NOT NULL,
-                photo_index         INTEGER NOT NULL,
-                source_file_id      TEXT,
-                target_message_id   INTEGER,
-                archive_path        TEXT NOT NULL,
-                filename            TEXT NOT NULL,
-                created_at          TEXT NOT NULL,
-                FOREIGN KEY (batch_id) REFERENCES photo_batches(id) ON DELETE CASCADE
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_photo_batches_model_code
-            ON photo_batches(model_code);
-
-            CREATE INDEX IF NOT EXISTS idx_photo_batches_code
-            ON photo_batches(code);
-
-            CREATE INDEX IF NOT EXISTS idx_photo_items_batch_id
-            ON photo_items(batch_id);
-            """
-        )
-        self._conn.commit()
+        self.library_root.mkdir(parents=True, exist_ok=True)
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
@@ -109,7 +48,7 @@ class PhotoLibraryRepo:
         caption_message_id: int | None = None,
     ) -> dict[str, Any]:
         """Archive processed JPGs and save append-only metadata."""
-        self._ensure_init()
+        self.init()
 
         created_at = self._now()
         batch_id = str(uuid.uuid4())
@@ -117,36 +56,31 @@ class PhotoLibraryRepo:
         category = extract_category(code)
         archive_dir = self._archive_dir_for_batch(model_code, code, created_at, batch_id)
 
-        with self._lock:
-            self._conn.execute(
-                """
-                INSERT INTO photo_batches (
-                    id, source_chat_id, target_chat_id, code, model_code,
-                    category, caption_message_id, photo_count, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    batch_id,
-                    source_chat_id,
-                    target_chat_id,
-                    code,
-                    model_code,
-                    category,
-                    caption_message_id,
-                    len(processed_paths),
-                    created_at,
-                ),
-            )
+        batch = db_client.insert(
+            "photo_batches",
+            {
+                "id": batch_id,
+                "source_chat_id": source_chat_id,
+                "target_chat_id": target_chat_id,
+                "code": code,
+                "model_code": model_code,
+                "category": category,
+                "caption_message_id": caption_message_id,
+                "photo_count": len(processed_paths),
+                "created_at": created_at,
+            },
+        )
 
-            items: list[dict[str, Any]] = []
-            for index, processed_path in enumerate(processed_paths, start=1):
-                item_id = str(uuid.uuid4())
-                archive_name = f"{index:02d}_{sanitize_code(code)}.jpg"
-                archive_path = archive_dir / archive_name
-                shutil.copy2(processed_path, archive_path)
+        items: list[dict[str, Any]] = []
+        for index, processed_path in enumerate(processed_paths, start=1):
+            archive_name = f"{index:02d}_{sanitize_code(code)}.jpg"
+            archive_path = archive_dir / archive_name
+            shutil.copy2(processed_path, archive_path)
 
-                row = {
-                    "id": item_id,
+            item = db_client.insert(
+                "photo_items",
+                {
+                    "id": str(uuid.uuid4()),
                     "batch_id": batch_id,
                     "photo_index": index,
                     "source_file_id": source_file_ids[index - 1] if index - 1 < len(source_file_ids) else None,
@@ -154,28 +88,9 @@ class PhotoLibraryRepo:
                     "archive_path": str(archive_path),
                     "filename": archive_name,
                     "created_at": created_at,
-                }
-                self._conn.execute(
-                    """
-                    INSERT INTO photo_items (
-                        id, batch_id, photo_index, source_file_id,
-                        target_message_id, archive_path, filename, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        row["id"],
-                        row["batch_id"],
-                        row["photo_index"],
-                        row["source_file_id"],
-                        row["target_message_id"],
-                        row["archive_path"],
-                        row["filename"],
-                        row["created_at"],
-                    ),
-                )
-                items.append(row)
-
-            self._conn.commit()
+                },
+            )
+            items.append(item)
 
         logger.info(
             "Saved photo batch %s for model=%s code=%s count=%d",
@@ -185,34 +100,31 @@ class PhotoLibraryRepo:
             len(items),
         )
         return {
-            "id": batch_id,
-            "source_chat_id": source_chat_id,
-            "target_chat_id": target_chat_id,
-            "code": code,
-            "model_code": model_code,
-            "category": category,
-            "caption_message_id": caption_message_id,
-            "photo_count": len(items),
-            "created_at": created_at,
+            **batch,
             "archive_dir": str(archive_dir),
             "items": items,
         }
 
     def list_models(self) -> list[dict[str, Any]]:
-        self._ensure_init()
-        rows = self._conn.execute(
-            """
-            SELECT
-                COALESCE(model_code, 'unknown_model') AS model_code,
-                COUNT(*) AS batch_count,
-                SUM(photo_count) AS photo_count,
-                MAX(created_at) AS latest_batch_at
-            FROM photo_batches
-            GROUP BY COALESCE(model_code, 'unknown_model')
-            ORDER BY latest_batch_at DESC
-            """
-        ).fetchall()
-        return [dict(row) for row in rows]
+        rows = self.list_batches(limit=5000)
+        grouped: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            key = row.get("model_code") or "unknown_model"
+            bucket = grouped.setdefault(
+                key,
+                {
+                    "model_code": key,
+                    "batch_count": 0,
+                    "photo_count": 0,
+                    "latest_batch_at": None,
+                },
+            )
+            bucket["batch_count"] += 1
+            bucket["photo_count"] += int(row.get("photo_count") or 0)
+            created_at = row.get("created_at")
+            if created_at and (bucket["latest_batch_at"] is None or created_at > bucket["latest_batch_at"]):
+                bucket["latest_batch_at"] = created_at
+        return sorted(grouped.values(), key=lambda item: item.get("latest_batch_at") or "", reverse=True)
 
     def list_batches(
         self,
@@ -221,23 +133,16 @@ class PhotoLibraryRepo:
         code: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        self._ensure_init()
-        clauses: list[str] = []
-        params: list[Any] = []
-        if model_code:
-            clauses.append("model_code = ?")
-            params.append(model_code)
-        if code:
-            clauses.append("code = ?")
-            params.append(code)
-
-        query = "SELECT * FROM photo_batches"
-        if clauses:
-            query += " WHERE " + " AND ".join(clauses)
-        query += " ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
-        rows = self._conn.execute(query, params).fetchall()
-        return [dict(row) for row in rows]
+        rows = db_client.select("photo_batches")
+        filtered = []
+        for row in rows:
+            if model_code and row.get("model_code") != model_code:
+                continue
+            if code and row.get("code") != code:
+                continue
+            filtered.append(row)
+        filtered.sort(key=lambda row: row.get("created_at") or "", reverse=True)
+        return filtered[:limit]
 
     def list_photos(
         self,
@@ -247,80 +152,54 @@ class PhotoLibraryRepo:
         batch_id: str | None = None,
         limit: int = 500,
     ) -> list[dict[str, Any]]:
-        self._ensure_init()
-        clauses: list[str] = []
-        params: list[Any] = []
-
-        if model_code:
-            clauses.append("b.model_code = ?")
-            params.append(model_code)
-        if code:
-            clauses.append("b.code = ?")
-            params.append(code)
+        batches = self.list_batches(model_code=model_code, code=code, limit=5000)
         if batch_id:
-            clauses.append("b.id = ?")
-            params.append(batch_id)
+            batches = [batch for batch in batches if batch.get("id") == batch_id]
+        if not batches:
+            return []
 
-        query = """
-            SELECT
-                i.id,
-                i.batch_id,
-                i.photo_index,
-                i.source_file_id,
-                i.target_message_id,
-                i.archive_path,
-                i.filename,
-                i.created_at,
-                b.code,
-                b.model_code,
-                b.category,
-                b.source_chat_id,
-                b.target_chat_id,
-                b.caption_message_id
-            FROM photo_items i
-            JOIN photo_batches b ON b.id = i.batch_id
-        """
-        if clauses:
-            query += " WHERE " + " AND ".join(clauses)
-        query += " ORDER BY i.created_at DESC, i.photo_index ASC LIMIT ?"
-        params.append(limit)
-        rows = self._conn.execute(query, params).fetchall()
-        return [dict(row) for row in rows]
+        batch_by_id = {batch["id"]: batch for batch in batches}
+        items = []
+        for item in db_client.select("photo_items"):
+            parent = batch_by_id.get(item.get("batch_id"))
+            if not parent:
+                continue
+            items.append(
+                {
+                    **item,
+                    "code": parent.get("code"),
+                    "model_code": parent.get("model_code"),
+                    "category": parent.get("category"),
+                    "source_chat_id": parent.get("source_chat_id"),
+                    "target_chat_id": parent.get("target_chat_id"),
+                    "caption_message_id": parent.get("caption_message_id"),
+                }
+            )
+        items.sort(key=lambda row: ((row.get("created_at") or ""), -(row.get("photo_index") or 0)), reverse=True)
+        return items[:limit]
 
     def get_photo(self, photo_id: str) -> dict[str, Any] | None:
-        self._ensure_init()
-        row = self._conn.execute(
-            """
-            SELECT
-                i.id,
-                i.batch_id,
-                i.photo_index,
-                i.source_file_id,
-                i.target_message_id,
-                i.archive_path,
-                i.filename,
-                i.created_at,
-                b.code,
-                b.model_code,
-                b.category,
-                b.source_chat_id,
-                b.target_chat_id,
-                b.caption_message_id
-            FROM photo_items i
-            JOIN photo_batches b ON b.id = i.batch_id
-            WHERE i.id = ?
-            """,
-            (photo_id,),
-        ).fetchone()
-        return dict(row) if row else None
+        rows = db_client.select("photo_items", {"id": photo_id})
+        if not rows:
+            return None
+        item = rows[0]
+        batch = self.get_batch(item["batch_id"])
+        if not batch:
+            return None
+        return {
+            **item,
+            "code": batch.get("code"),
+            "model_code": batch.get("model_code"),
+            "category": batch.get("category"),
+            "source_chat_id": batch.get("source_chat_id"),
+            "target_chat_id": batch.get("target_chat_id"),
+            "caption_message_id": batch.get("caption_message_id"),
+        }
 
     def get_batch(self, batch_id: str) -> dict[str, Any] | None:
-        self._ensure_init()
-        row = self._conn.execute(
-            "SELECT * FROM photo_batches WHERE id = ?",
-            (batch_id,),
-        ).fetchone()
-        return dict(row) if row else None
+        rows = db_client.select("photo_batches", {"id": batch_id})
+        return rows[0] if rows else None
 
 
 photo_library_repo = PhotoLibraryRepo()
+

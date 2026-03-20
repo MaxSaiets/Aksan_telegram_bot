@@ -1,7 +1,7 @@
 """
 Database client abstraction.
-- USE_MOCKS=true  → SQLite (no credentials needed, file: tmp/mock.db)
-- USE_MOCKS=false → Supabase (requires SUPABASE_URL + SUPABASE_SERVICE_KEY)
+- USE_MOCKS=true  -> SQLite (no credentials needed, file: tmp/mock.db)
+- USE_MOCKS=false -> Supabase (requires SUPABASE_URL + SUPABASE_SERVICE_KEY)
 """
 import sqlite3
 import uuid
@@ -16,10 +16,6 @@ logger = get_logger(__name__)
 
 _MOCK_DB_PATH = Path("tmp/mock.db")
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Mock implementation — SQLite
-# ─────────────────────────────────────────────────────────────────────────────
 
 class _MockDBClient:
     """In-process SQLite that mirrors the Supabase schema."""
@@ -61,6 +57,29 @@ class _MockDBClient:
                 match_confidence        REAL,
                 created_at              TEXT,
                 updated_at              TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS photo_batches (
+                id                  TEXT PRIMARY KEY,
+                source_chat_id      TEXT NOT NULL,
+                target_chat_id      TEXT NOT NULL,
+                code                TEXT NOT NULL,
+                model_code          TEXT,
+                category            TEXT,
+                caption_message_id  INTEGER,
+                photo_count         INTEGER NOT NULL,
+                created_at          TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS photo_items (
+                id                  TEXT PRIMARY KEY,
+                batch_id            TEXT NOT NULL,
+                photo_index         INTEGER NOT NULL,
+                source_file_id      TEXT,
+                target_message_id   INTEGER,
+                archive_path        TEXT NOT NULL,
+                filename            TEXT NOT NULL,
+                created_at          TEXT NOT NULL
             );
         """)
         self._conn.commit()
@@ -125,9 +144,6 @@ class _MockDBClient:
         )
         self._conn.commit()
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Real implementation — Supabase
-# ─────────────────────────────────────────────────────────────────────────────
 
 class _SupabaseClient:
     def __init__(self):
@@ -162,10 +178,6 @@ class _SupabaseClient:
             q = q.eq(k, v)
         q.execute()
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Public singleton
-# ─────────────────────────────────────────────────────────────────────────────
 
 db_client: _MockDBClient | _SupabaseClient = (
     _MockDBClient() if settings.USE_MOCKS else _SupabaseClient()
