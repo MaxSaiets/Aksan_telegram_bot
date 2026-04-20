@@ -1,26 +1,15 @@
 """
-Generate an xlsx file for bulk price import into SalesDrive CRM.
+Generate a simplified xlsx for bulk price update in SalesDrive CRM.
 
-Parses the SalesDrive YML feed and maps fields to the SalesDrive import format:
-https://salesdrive.info/import/products
-
-Column mapping from YML -> SalesDrive import columns:
-  offer id          -> ID товару/послуги
-  name              -> Товар/Послуга
-  name_ua           -> Назва (UA)
-  vendor            -> Виробник
-  article/vendorCode -> SKU
-  price             -> Ціна
-  oldprice          -> якщо є — обчислює Знижку в %
-  barcode           -> Штрихкод
-  stock             -> Залишок на складі
-  categoryId        -> ID категорії
-  category name     -> Категорія
-  description       -> Опис
-  picture           -> Зображення (кілька через кому)
-  url               -> Сторінка на сайті
-  keywords          -> Ключові слова
-  param[*]          -> Характеристика [Назва]
+Columns per SalesDrive import spec:
+  Товар/Послуга
+  SKU
+  Ціна
+  Знижка                        (абсолютне або %)
+  Ціна зі знижкою               (довідково, не імпортується)
+  Залишок на складі
+  Ціна [Ціна на маркетплейси]   ("Ціна [Тип ціни]")
+  Ціна [Ціна на маркетплейси] - Знижка  ("Ціна [Тип ціни] - Знижка")
 """
 from __future__ import annotations
 
@@ -37,148 +26,105 @@ from config import settings
 
 logger = get_logger(__name__)
 
+_MARKETPLACE_PRICE_TYPE = "Ціна на маркетплейси"
+
 _MOCK_ROWS = [
     {
-        "ID товару/послуги": "SD-001",
         "Товар/Послуга": "Костюм 40 червоний",
-        "Назва (UA)": "Костюм 40 червоний",
-        "Виробник": "Aksan",
         "SKU": "26.2873_red_40(S)",
         "Ціна": 1200.00,
         "Знижка": "",
-        "Штрихкод": "",
-        "Залишок на складі": "",
-        "ID категорії": "10",
-        "Категорія": "Костюми",
-        "ID підкатегорії": "",
-        "Підкатегорія": "",
-        "Опис": "",
-        "Зображення": "",
-        "Сторінка на сайті": "",
-        "Ключові слова": "",
+        "Ціна зі знижкою": 1200.00,
+        "Залишок на складі": 5,
+        f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": 1400.00,
+        f"Ціна [{_MARKETPLACE_PRICE_TYPE}] - Знижка": "",
     },
     {
-        "ID товару/послуги": "SD-002",
         "Товар/Послуга": "Костюм 42 червоний",
-        "Назва (UA)": "Костюм 42 червоний",
-        "Виробник": "Aksan",
         "SKU": "26.2873_red_42(M)",
         "Ціна": 1200.00,
-        "Знижка": "",
-        "Штрихкод": "",
-        "Залишок на складі": "",
-        "ID категорії": "10",
-        "Категорія": "Костюми",
-        "ID підкатегорії": "",
-        "Підкатегорія": "",
-        "Опис": "",
-        "Зображення": "",
-        "Сторінка на сайті": "",
-        "Ключові слова": "",
+        "Знижка": "5%",
+        "Ціна зі знижкою": 1140.00,
+        "Залишок на складі": 3,
+        f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": 1400.00,
+        f"Ціна [{_MARKETPLACE_PRICE_TYPE}] - Знижка": "10%",
     },
 ]
 
 
+def _to_float(val: str) -> float | None:
+    try:
+        return float(val.replace(",", ".").strip()) if val else None
+    except ValueError:
+        return None
+
+
+def _calc_discounted(price: float | None, discount_str: str) -> float | None:
+    if price is None:
+        return None
+    if not discount_str:
+        return price
+    d = discount_str.strip()
+    try:
+        if d.endswith("%"):
+            pct = float(d[:-1])
+            return round(price * (1 - pct / 100), 2)
+        else:
+            return round(price - float(d), 2)
+    except ValueError:
+        return price
+
+
 def _parse_yml_to_rows(content: bytes) -> list[dict]:
     root = ET.fromstring(content)
-    shop = root.find("shop")
-    if shop is None:
-        shop = root
-
-    # Build category id->name map
-    categories: dict[str, str] = {}
-    category_parents: dict[str, str] = {}
-    for cat in shop.findall(".//category"):
-        cat_id = cat.get("id", "")
-        parent_id = cat.get("parentId", "")
-        categories[cat_id] = cat.text or ""
-        if parent_id:
-            category_parents[cat_id] = parent_id
-
-    def _cat_name(cat_id: str) -> str:
-        return categories.get(cat_id, "")
-
-    def _parent_id(cat_id: str) -> str:
-        return category_parents.get(cat_id, "")
+    shop = root.find("shop") or root
 
     rows: list[dict] = []
     for offer in shop.findall(".//offer"):
-        offer_id = offer.get("id", "")
-        article = offer.findtext("article") or offer.findtext("vendorCode") or offer_id
-        name = offer.findtext("name") or ""
-        name_ua = offer.findtext("name_ua") or name
-        vendor = offer.findtext("vendor") or offer.findtext("manufacturer") or ""
-        price_str = offer.findtext("price") or ""
-        oldprice_str = offer.findtext("oldprice") or ""
-        barcode = offer.findtext("barcode") or offer.findtext("ean") or ""
+        article = (
+            offer.findtext("article")
+            or offer.findtext("vendorCode")
+            or offer.get("id", "")
+        )
+        name = offer.findtext("name_ua") or offer.findtext("name") or ""
+        price = _to_float(offer.findtext("price") or "")
+        old_price = _to_float(offer.findtext("oldprice") or "")
         stock = offer.findtext("stock_quantity") or offer.findtext("quantity") or ""
-        cat_id = offer.findtext("categoryId") or ""
-        description = offer.findtext("description") or ""
-        url = offer.findtext("url") or ""
-        keywords = offer.findtext("keywords") or ""
 
-        # Pictures — join multiple with comma
-        pictures = [p.text.strip() for p in offer.findall("picture") if p.text]
-        images = ", ".join(pictures)
+        # Main discount: derived from oldprice if present
+        discount_str = ""
+        if price is not None and old_price is not None and old_price > price:
+            discount_str = f"{round((old_price - price) / old_price * 100, 1)}%"
 
-        # Price / discount
-        try:
-            price = float(price_str) if price_str else ""
-        except ValueError:
-            price = ""
-        discount = ""
-        if price and oldprice_str:
-            try:
-                old = float(oldprice_str)
-                if old > 0 and isinstance(price, float) and price < old:
-                    discount = f"{round((old - price) / old * 100, 1)}%"
-            except ValueError:
-                pass
+        discounted = _calc_discounted(price, discount_str)
 
-        # Category hierarchy
-        parent = _parent_id(cat_id)
-        if parent:
-            top_cat_id = parent
-            top_cat_name = _cat_name(parent)
-            sub_cat_id = cat_id
-            sub_cat_name = _cat_name(cat_id)
-        else:
-            top_cat_id = cat_id
-            top_cat_name = _cat_name(cat_id)
-            sub_cat_id = ""
-            sub_cat_name = ""
+        # Additional prices — SalesDrive YML exports them as <price_type name="...">value</price_type>
+        # or as nested <prices><price type="...">value</price></prices>
+        marketplace_price: float | None = None
+        marketplace_discount: str = ""
 
-        row: dict = {
-            "ID товару/послуги": offer_id,
+        for pt in offer.findall("price_type"):
+            pt_name = (pt.get("name") or "").strip()
+            if pt_name == _MARKETPLACE_PRICE_TYPE:
+                marketplace_price = _to_float(pt.text or "")
+                marketplace_discount = (pt.get("discount") or "").strip()
+
+        if marketplace_price is None:
+            for p in offer.findall(".//prices/price"):
+                if (p.get("type") or "").strip() == _MARKETPLACE_PRICE_TYPE:
+                    marketplace_price = _to_float(p.text or "")
+                    marketplace_discount = (p.get("discount") or "").strip()
+
+        rows.append({
             "Товар/Послуга": name,
-            "Назва (UA)": name_ua,
-            "Виробник": vendor,
             "SKU": article,
-            "Ціна": price,
-            "Знижка": discount,
-            "Штрихкод": barcode,
+            "Ціна": price if price is not None else "",
+            "Знижка": discount_str,
+            "Ціна зі знижкою": discounted if discounted is not None else "",
             "Залишок на складі": stock,
-            "ID категорії": top_cat_id,
-            "Категорія": top_cat_name,
-            "ID підкатегорії": sub_cat_id,
-            "Підкатегорія": sub_cat_name,
-            "Опис": description,
-            "Зображення": images,
-            "Сторінка на сайті": url,
-            "Ключові слова": keywords,
-        }
-
-        # Dynamic characteristic columns
-        for param in offer.findall("param"):
-            param_name = param.get("name", "").strip()
-            if param_name:
-                col = f"Характеристика [{param_name}]"
-                if col in row:
-                    row[col] = f"{row[col]}, {param.text or ''}"
-                else:
-                    row[col] = param.text or ""
-
-        rows.append(row)
+            f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": marketplace_price if marketplace_price is not None else "",
+            f"Ціна [{_MARKETPLACE_PRICE_TYPE}] - Знижка": marketplace_discount,
+        })
 
     logger.info("YML parsed: %d offers", len(rows))
     return rows
@@ -190,14 +136,14 @@ def _autofit(ws, df: pd.DataFrame) -> None:
             len(str(col)),
             df[col].astype(str).map(len).max() if not df.empty else 0,
         )
-        ws.column_dimensions[ws.cell(1, ci).column_letter].width = min(width + 4, 70)
+        ws.column_dimensions[ws.cell(1, ci).column_letter].width = min(width + 4, 60)
 
 
 def generate_prices_file(
     output_path: Path | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> tuple[Path, int]:
-    _progress = on_progress or (lambda msg: None)
+    _progress = on_progress or (lambda _: None)
 
     if output_path is None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -222,16 +168,6 @@ def generate_prices_file(
 
     _progress(f"[3/3] Записую Excel ({len(rows)} рядків)...")
     df = pd.DataFrame(rows)
-
-    # Ensure base columns appear first in a fixed order
-    base_cols = [
-        "ID товару/послуги", "Товар/Послуга", "Назва (UA)", "Виробник", "SKU",
-        "Ціна", "Знижка", "Штрихкод", "Залишок на складі",
-        "ID категорії", "Категорія", "ID підкатегорії", "Підкатегорія",
-        "Опис", "Зображення", "Сторінка на сайті", "Ключові слова",
-    ]
-    extra_cols = [c for c in df.columns if c not in base_cols]
-    df = df[base_cols + extra_cols]
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with pd.ExcelWriter(str(output_path), engine="openpyxl") as writer:
