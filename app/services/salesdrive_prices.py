@@ -1,15 +1,17 @@
 """
 Generate a simplified xlsx for bulk price update in SalesDrive CRM.
 
-Columns per SalesDrive import spec:
-  Товар/Послуга
-  SKU
-  Ціна
-  Знижка                        (абсолютне або %)
-  Ціна зі знижкою               (довідково, не імпортується)
-  Залишок на складі
-  Ціна [Ціна на маркетплейси]   ("Ціна [Тип ціни]")
-  Ціна [Ціна на маркетплейси] - Знижка  ("Ціна [Тип ціни] - Знижка")
+Feed fields used (from actual aksan.salesdrive.me YML):
+  name_ua            -> Товар/Послуга
+  article            -> SKU
+  price              -> Ціна
+  quantity_in_stock  -> Залишок на складі
+
+Extra columns added empty for manual fill per SalesDrive import spec
+("Ціна [Тип ціни]" / "Ціна [Тип ціни] - Знижка"):
+  Знижка
+  Ціна [Ціна на маркетплейси]
+  Ціна [Ціна на маркетплейси] - Знижка
 """
 from __future__ import annotations
 
@@ -30,49 +32,24 @@ _MARKETPLACE_PRICE_TYPE = "Ціна на маркетплейси"
 
 _MOCK_ROWS = [
     {
-        "Товар/Послуга": "Костюм 40 червоний",
-        "SKU": "26.2873_red_40(S)",
-        "Ціна": 1200.00,
+        "Товар/Послуга": "Жіночі велосипедки Aksan 26.1881 48(XL) Чорний",
+        "SKU": "26.1881_black_48(XL)",
+        "Ціна": 345,
         "Знижка": "",
-        "Ціна зі знижкою": 1200.00,
-        "Залишок на складі": 5,
-        f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": 1400.00,
+        "Залишок на складі": 3,
+        f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": "",
         f"Ціна [{_MARKETPLACE_PRICE_TYPE}] - Знижка": "",
     },
     {
-        "Товар/Послуга": "Костюм 42 червоний",
-        "SKU": "26.2873_red_42(M)",
-        "Ціна": 1200.00,
-        "Знижка": "5%",
-        "Ціна зі знижкою": 1140.00,
-        "Залишок на складі": 3,
-        f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": 1400.00,
-        f"Ціна [{_MARKETPLACE_PRICE_TYPE}] - Знижка": "10%",
+        "Товар/Послуга": "Жіночий костюм Aksan 26.2924 46(L) Коричневий",
+        "SKU": "26.2924_brown_46(L)",
+        "Ціна": 1860,
+        "Знижка": "",
+        "Залишок на складі": 1,
+        f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": "",
+        f"Ціна [{_MARKETPLACE_PRICE_TYPE}] - Знижка": "",
     },
 ]
-
-
-def _to_float(val: str) -> float | None:
-    try:
-        return float(val.replace(",", ".").strip()) if val else None
-    except ValueError:
-        return None
-
-
-def _calc_discounted(price: float | None, discount_str: str) -> float | None:
-    if price is None:
-        return None
-    if not discount_str:
-        return price
-    d = discount_str.strip()
-    try:
-        if d.endswith("%"):
-            pct = float(d[:-1])
-            return round(price * (1 - pct / 100), 2)
-        else:
-            return round(price - float(d), 2)
-    except ValueError:
-        return price
 
 
 def _parse_yml_to_rows(content: bytes) -> list[dict]:
@@ -81,49 +58,32 @@ def _parse_yml_to_rows(content: bytes) -> list[dict]:
 
     rows: list[dict] = []
     for offer in shop.findall(".//offer"):
+        name_ua = offer.findtext("name_ua") or offer.findtext("name") or ""
         article = (
             offer.findtext("article")
             or offer.findtext("vendorCode")
             or offer.get("id", "")
         )
-        name = offer.findtext("name_ua") or offer.findtext("name") or ""
-        price = _to_float(offer.findtext("price") or "")
-        old_price = _to_float(offer.findtext("oldprice") or "")
-        stock = offer.findtext("stock_quantity") or offer.findtext("quantity") or ""
+        price_raw = offer.findtext("price") or ""
+        try:
+            price = float(price_raw)
+        except ValueError:
+            price = ""
 
-        # Main discount: derived from oldprice if present
-        discount_str = ""
-        if price is not None and old_price is not None and old_price > price:
-            discount_str = f"{round((old_price - price) / old_price * 100, 1)}%"
-
-        discounted = _calc_discounted(price, discount_str)
-
-        # Additional prices — SalesDrive YML exports them as <price_type name="...">value</price_type>
-        # or as nested <prices><price type="...">value</price></prices>
-        marketplace_price: float | None = None
-        marketplace_discount: str = ""
-
-        for pt in offer.findall("price_type"):
-            pt_name = (pt.get("name") or "").strip()
-            if pt_name == _MARKETPLACE_PRICE_TYPE:
-                marketplace_price = _to_float(pt.text or "")
-                marketplace_discount = (pt.get("discount") or "").strip()
-
-        if marketplace_price is None:
-            for p in offer.findall(".//prices/price"):
-                if (p.get("type") or "").strip() == _MARKETPLACE_PRICE_TYPE:
-                    marketplace_price = _to_float(p.text or "")
-                    marketplace_discount = (p.get("discount") or "").strip()
+        stock_raw = offer.findtext("quantity_in_stock") or offer.findtext("quantity") or ""
+        try:
+            stock = int(stock_raw)
+        except ValueError:
+            stock = stock_raw
 
         rows.append({
-            "Товар/Послуга": name,
+            "Товар/Послуга": name_ua,
             "SKU": article,
-            "Ціна": price if price is not None else "",
-            "Знижка": discount_str,
-            "Ціна зі знижкою": discounted if discounted is not None else "",
+            "Ціна": price,
+            "Знижка": "",
             "Залишок на складі": stock,
-            f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": marketplace_price if marketplace_price is not None else "",
-            f"Ціна [{_MARKETPLACE_PRICE_TYPE}] - Знижка": marketplace_discount,
+            f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": "",
+            f"Ціна [{_MARKETPLACE_PRICE_TYPE}] - Знижка": "",
         })
 
     logger.info("YML parsed: %d offers", len(rows))
