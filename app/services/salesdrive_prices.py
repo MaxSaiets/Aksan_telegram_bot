@@ -57,18 +57,38 @@ def _parse_yml_to_rows(content: bytes) -> list[dict]:
         except ValueError:
             price = ""
 
+        # Знижка: беремо напряму з фіду або рахуємо з oldprice
+        discount: float | str = ""
+        discount_raw = offer.findtext("discount") or ""
+        oldprice_raw = offer.findtext("oldprice") or ""
+        if discount_raw:
+            try:
+                discount = float(discount_raw)
+            except ValueError:
+                discount = discount_raw
+        elif oldprice_raw and isinstance(price, float):
+            try:
+                old = float(oldprice_raw)
+                if old > price:
+                    discount = round(old - price, 2)
+            except ValueError:
+                pass
+
         stock_raw = offer.findtext("quantity_in_stock") or offer.findtext("quantity") or ""
         try:
             stock = int(stock_raw)
         except ValueError:
             stock = stock_raw
 
-        rows.append({
+        row: dict = {
             "Товар/Послуга": name_ua,
             "SKU": article,
             "Ціна": price,
             "Залишок на складі": stock,
-        })
+        }
+        if discount != "":
+            row["Знижка"] = discount
+        rows.append(row)
 
     rows.sort(key=lambda r: str(r.get("SKU", "")))
     logger.info("YML parsed: %d offers", len(rows))
