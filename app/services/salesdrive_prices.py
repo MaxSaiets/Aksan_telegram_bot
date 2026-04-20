@@ -28,26 +28,18 @@ from config import settings
 
 logger = get_logger(__name__)
 
-_MARKETPLACE_PRICE_TYPE = "Ціна на маркетплейси"
-
 _MOCK_ROWS = [
     {
         "Товар/Послуга": "Жіночі велосипедки Aksan 26.1881 48(XL) Чорний",
         "SKU": "26.1881_black_48(XL)",
         "Ціна": 345,
-        "Знижка": "",
         "Залишок на складі": 3,
-        f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": "",
-        f"Ціна [{_MARKETPLACE_PRICE_TYPE}] - Знижка": "",
     },
     {
         "Товар/Послуга": "Жіночий костюм Aksan 26.2924 46(L) Коричневий",
         "SKU": "26.2924_brown_46(L)",
         "Ціна": 1860,
-        "Знижка": "",
         "Залишок на складі": 1,
-        f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": "",
-        f"Ціна [{_MARKETPLACE_PRICE_TYPE}] - Знижка": "",
     },
 ]
 
@@ -80,10 +72,7 @@ def _parse_yml_to_rows(content: bytes) -> list[dict]:
             "Товар/Послуга": name_ua,
             "SKU": article,
             "Ціна": price,
-            "Знижка": "",
             "Залишок на складі": stock,
-            f"Ціна [{_MARKETPLACE_PRICE_TYPE}]": "",
-            f"Ціна [{_MARKETPLACE_PRICE_TYPE}] - Знижка": "",
         })
 
     logger.info("YML parsed: %d offers", len(rows))
