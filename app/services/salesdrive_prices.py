@@ -25,7 +25,8 @@ logger = get_logger(__name__)
 
 _MOCK_ROWS = [
     {
-        "Товар/Послуга": "Жіночі велосипедки Aksan 26.1881 48(XL) Чорний",
+        "ID товару/послуги": "26.1881_black_48(XL)",
+        "Товар/Послуга": "Женские велосипедки Aksan 26.1881 48(XL) Черный",
         "SKU": "26.1881_black_48(XL)",
         "Ціна": 345,
         "Знижка": "",
@@ -33,7 +34,8 @@ _MOCK_ROWS = [
         "Залишок на складі": 3,
     },
     {
-        "Товар/Послуга": "Жіночі штани Aksan 25.2779 46(L) Чорний",
+        "ID товару/послуги": "25.2779_black_46(L)",
+        "Товар/Послуга": "Женские брюки Aksan 25.2779 46(L) Черный",
         "SKU": "25.2779_black_46(L)",
         "Ціна": 790,
         "Знижка": 87,
@@ -49,7 +51,7 @@ def _parse_yml_to_rows(content: bytes) -> list[dict]:
 
     rows: list[dict] = []
     for offer in shop.findall(".//offer"):
-        name_ua = offer.findtext("name_ua") or offer.findtext("name") or ""
+        name = offer.findtext("name") or offer.findtext("name_ua") or ""
         article = (
             offer.findtext("article")
             or offer.findtext("vendorCode")
@@ -84,7 +86,8 @@ def _parse_yml_to_rows(content: bytes) -> list[dict]:
             stock = stock_raw
 
         rows.append({
-            "Товар/Послуга": name_ua,
+            "ID товару/послуги": article,
+            "Товар/Послуга": name,
             "SKU": article,
             "Ціна": base_price,
             "Знижка": discount,
