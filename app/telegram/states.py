@@ -16,3 +16,9 @@ class PhotoUpload(StatesGroup):
     """State for collecting multiple photos before a code message."""
 
     waiting_photos = State()
+
+
+class PriceFileConvert(StatesGroup):
+    """Waiting for user to send an edited prices xlsx for colored-row filtering."""
+
+    waiting_file = State()

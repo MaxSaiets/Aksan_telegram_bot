@@ -4,6 +4,7 @@ Telegram bot handlers (aiogram v3 Router).
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -23,6 +24,7 @@ from app.telegram.keyboard import (
     BTN_UNDO_LAST,
     CB_CANCEL_TASK,
     CB_FILES_BACK,
+    CB_FILES_CONVERT,
     CB_FILES_PRICES,
     CB_FILES_REPORT,
     CB_FILES_ROZETKA,
@@ -35,7 +37,7 @@ from app.telegram.keyboard import (
     photo_mode_keyboard,
     undo_confirm_keyboard,
 )
-from app.telegram.states import PhotoUpload, VideoUpload
+from app.telegram.states import PhotoUpload, PriceFileConvert, VideoUpload
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -247,6 +249,66 @@ async def cb_files_prices(callback: CallbackQuery) -> None:
     from app.tasks.files_task import run_generate_prices_file
 
     run_generate_prices_file.delay(chat_id=str(callback.message.chat.id))
+
+
+@router.callback_query(F.data == CB_FILES_CONVERT)
+async def cb_files_convert(callback: CallbackQuery, state: FSMContext) -> None:
+    if not _is_allowed(callback.from_user.id):
+        await callback.answer()
+        return
+    await callback.answer()
+    await state.set_state(PriceFileConvert.waiting_file)
+    await callback.message.edit_text(
+        "📎 Надішліть відредагований файл цін (.xlsx).\n\n"
+        "Залишаться тільки рядки з кольоровим заповненням."
+    )
+
+
+@router.message(PriceFileConvert.waiting_file, F.document)
+async def handle_price_file(message: Message, state: FSMContext) -> None:
+    if not _is_allowed(message.from_user.id):
+        return
+
+    doc = message.document
+    fname = (doc.file_name or "").lower()
+    if not fname.endswith(".xlsx"):
+        await message.answer("❌ Потрібен файл формату .xlsx")
+        return
+
+    await state.clear()
+    await message.answer("⏳ Обробляю файл...")
+
+    import tempfile
+    from datetime import datetime
+    from aiogram.types import BufferedInputFile
+
+    from app.services.price_file_converter import filter_colored_rows
+    from config import settings
+
+    with tempfile.TemporaryDirectory() as tmp:
+        in_path = Path(tmp) / "input.xlsx"
+        file = await message.bot.get_file(doc.file_id)
+        await message.bot.download_file(file.file_path, destination=str(in_path))
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_path = settings.temp_dir / f"prices_filtered_{ts}.xlsx"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        kept = filter_colored_rows(in_path, out_path)
+
+    if kept == 0:
+        await message.answer(
+            "⚠️ Жодного кольорового рядка не знайдено. Перевірте заповнення у файлі.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+
+    with open(out_path, "rb") as f:
+        await message.answer_document(
+            BufferedInputFile(f.read(), filename=out_path.name),
+            caption=f"✅ Готово: {kept} рядків з кольоровим заповненням",
+        )
+    await message.answer("Оберіть дію:", reply_markup=main_menu_keyboard())
 
 
 @router.callback_query(F.data == CB_FILES_BACK)
