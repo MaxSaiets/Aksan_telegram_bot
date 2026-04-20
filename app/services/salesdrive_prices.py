@@ -28,12 +28,16 @@ _MOCK_ROWS = [
         "Товар/Послуга": "Жіночі велосипедки Aksan 26.1881 48(XL) Чорний",
         "SKU": "26.1881_black_48(XL)",
         "Ціна": 345,
+        "Знижка": "",
+        "Ціна зі знижкою": "",
         "Залишок на складі": 3,
     },
     {
         "Товар/Послуга": "Жіночий костюм Aksan 26.2924 46(L) Коричневий",
         "SKU": "26.2924_brown_46(L)",
         "Ціна": 1860,
+        "Знижка": "",
+        "Ціна зі знижкою": "",
         "Залишок на складі": 1,
     },
 ]
@@ -80,15 +84,19 @@ def _parse_yml_to_rows(content: bytes) -> list[dict]:
         except ValueError:
             stock = stock_raw
 
-        row: dict = {
+        if isinstance(price, float) and isinstance(discount, float):
+            price_with_discount = round(price - discount, 2)
+        else:
+            price_with_discount = ""
+
+        rows.append({
             "Товар/Послуга": name_ua,
             "SKU": article,
             "Ціна": price,
+            "Знижка": discount,
+            "Ціна зі знижкою": price_with_discount,
             "Залишок на складі": stock,
-        }
-        if discount != "":
-            row["Знижка"] = discount
-        rows.append(row)
+        })
 
     rows.sort(key=lambda r: str(r.get("SKU", "")))
     logger.info("YML parsed: %d offers", len(rows))
