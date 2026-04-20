@@ -138,3 +138,55 @@ def run_generate_site_file(self, chat_id: str):
             reply_markup=main_menu_keyboard(),
         ))
         raise self.retry(exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=1)
+def run_generate_prices_file(self, chat_id: str):
+    logger.info("Files/Prices START | chat=%s", chat_id[:12])
+    try:
+        def _progress(msg: str) -> None:
+            try:
+                _run(send_text(chat_id, msg))
+            except Exception:
+                pass
+
+        from app.services.salesdrive_prices import generate_prices_file
+
+        path, count = generate_prices_file(on_progress=_progress)
+
+        if count == 0:
+            _run(send_text(
+                chat_id,
+                "⚠️ Фід порожній або не вдалося завантажити дані з SalesDrive.",
+                reply_markup=main_menu_keyboard(),
+            ))
+            return {"status": "empty"}
+
+        caption = f"💰 Файл для оновлення цін готовий: {count} позицій"
+
+        if settings.USE_MOCKS:
+            _run(send_text(
+                chat_id,
+                f"[MOCK] {caption}\n📄 {path.name}",
+                reply_markup=main_menu_keyboard(),
+            ))
+        else:
+            _run(send_document(
+                chat_id,
+                file_path=path,
+                filename=path.name,
+                caption=caption,
+            ))
+            _run(send_text(chat_id, caption, reply_markup=main_menu_keyboard()))
+
+        logger.info("Files/Prices DONE | rows=%d | file=%s", count, path.name)
+        return {"status": "done", "count": count, "file": str(path)}
+
+    except Exception as exc:
+        logger.exception("Files/Prices FAILED: %s", exc)
+        _run(send_text(
+            chat_id,
+            f"❌ Помилка генерації файлу цін:\n{exc}",
+            reply_markup=main_menu_keyboard(),
+        ))
+        raise self.retry(exc=exc)

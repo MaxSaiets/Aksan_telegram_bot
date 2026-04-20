@@ -23,6 +23,7 @@ from app.telegram.keyboard import (
     BTN_UNDO_LAST,
     CB_CANCEL_TASK,
     CB_FILES_BACK,
+    CB_FILES_PRICES,
     CB_FILES_REPORT,
     CB_FILES_ROZETKA,
     CB_FILES_SITE,
@@ -237,6 +238,15 @@ async def cb_files_report(callback: CallbackQuery) -> None:
     from app.tasks.export_task import run_export
 
     run_export.delay(chat_id=str(callback.message.chat.id))
+
+
+@router.callback_query(F.data == CB_FILES_PRICES)
+async def cb_files_prices(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await callback.message.edit_text("Генерую файл для оновлення цін у SalesDrive...")
+    from app.tasks.files_task import run_generate_prices_file
+
+    run_generate_prices_file.delay(chat_id=str(callback.message.chat.id))
 
 
 @router.callback_query(F.data == CB_FILES_BACK)

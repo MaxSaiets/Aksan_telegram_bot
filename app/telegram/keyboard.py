@@ -23,6 +23,7 @@ CB_UNDO_CANCEL = "undo:cancel"
 CB_FILES_ROZETKA = "files:rozetka"
 CB_FILES_SITE = "files:site"
 CB_FILES_REPORT = "files:report"
+CB_FILES_PRICES = "files:prices"
 CB_FILES_BACK = "files:back"
 CB_CANCEL_TASK = "cancel:"
 
@@ -62,6 +63,7 @@ def files_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🛒 Для Розетки", callback_data=CB_FILES_ROZETKA)],
             [InlineKeyboardButton(text="🌐 Для сайту", callback_data=CB_FILES_SITE)],
             [InlineKeyboardButton(text="📊 Звіт .xlsx", callback_data=CB_FILES_REPORT)],
+            [InlineKeyboardButton(text="💰 Оновлення цін (SalesDrive)", callback_data=CB_FILES_PRICES)],
             [InlineKeyboardButton(text="← Назад", callback_data=CB_FILES_BACK)],
         ]
     )
