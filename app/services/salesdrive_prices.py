@@ -33,12 +33,12 @@ _MOCK_ROWS = [
         "Залишок на складі": 3,
     },
     {
-        "Товар/Послуга": "Жіночий костюм Aksan 26.2924 46(L) Коричневий",
-        "SKU": "26.2924_brown_46(L)",
-        "Ціна": 1860,
-        "Знижка": "",
-        "Ціна зі знижкою": "",
-        "Залишок на складі": 1,
+        "Товар/Послуга": "Жіночі штани Aksan 25.2779 46(L) Чорний",
+        "SKU": "25.2779_black_46(L)",
+        "Ціна": 790,
+        "Знижка": 87,
+        "Ціна зі знижкою": 703,
+        "Залишок на складі": 5,
     },
 ]
 
@@ -61,20 +61,19 @@ def _parse_yml_to_rows(content: bytes) -> list[dict]:
         except ValueError:
             price = ""
 
-        # Знижка: беремо напряму з фіду або рахуємо з oldprice
-        discount: float | str = ""
-        discount_raw = offer.findtext("discount") or ""
+        # price у фіді = фінальна ціна, oldprice = оригінальна (до знижки)
         oldprice_raw = offer.findtext("oldprice") or ""
-        if discount_raw:
-            try:
-                discount = float(discount_raw)
-            except ValueError:
-                discount = discount_raw
-        elif oldprice_raw and isinstance(price, float):
+        base_price: float | str = price
+        discount: float | str = ""
+        final_price: float | str = ""
+
+        if oldprice_raw and isinstance(price, float):
             try:
                 old = float(oldprice_raw)
                 if old > price:
+                    base_price = old
                     discount = round(old - price, 2)
+                    final_price = price
             except ValueError:
                 pass
 
@@ -84,17 +83,12 @@ def _parse_yml_to_rows(content: bytes) -> list[dict]:
         except ValueError:
             stock = stock_raw
 
-        if isinstance(price, float) and isinstance(discount, float):
-            price_with_discount = round(price - discount, 2)
-        else:
-            price_with_discount = ""
-
         rows.append({
             "Товар/Послуга": name_ua,
             "SKU": article,
-            "Ціна": price,
+            "Ціна": base_price,
             "Знижка": discount,
-            "Ціна зі знижкою": price_with_discount,
+            "Ціна зі знижкою": final_price,
             "Залишок на складі": stock,
         })
 
