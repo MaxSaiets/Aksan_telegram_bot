@@ -307,11 +307,13 @@ async def handle_price_file(message: Message, state: FSMContext) -> None:
         out_path = settings.temp_dir / f"prices_filtered_{ts}.xlsx"
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        kept = filter_colored_rows(in_path, out_path)
+        kept, debug_info = filter_colored_rows(in_path, out_path)
 
     if kept == 0:
         await message.answer(
-            "⚠️ Жодного кольорового рядка не знайдено. Перевірте заповнення у файлі.",
+            "⚠️ Жодного кольорового рядка не знайдено.\n\n"
+            f"🔍 Дебаг перших рядків:\n<code>{debug_info}</code>",
+            parse_mode="HTML",
             reply_markup=main_menu_keyboard(),
         )
         return
