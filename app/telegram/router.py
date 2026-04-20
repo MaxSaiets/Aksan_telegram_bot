@@ -245,7 +245,17 @@ async def cb_files_report(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == CB_FILES_PRICES)
 async def cb_files_prices(callback: CallbackQuery) -> None:
     await callback.answer()
-    await callback.message.edit_text("Генерую файл для оновлення цін у SalesDrive...")
+    await callback.message.edit_text(
+        "💰 Оновлення цін — генерую файл...\n\n"
+        "📋 Як це працює:\n"
+        "1. Отримайте файл з усіма товарами\n"
+        "2. Відкрийте у Excel, відредагуйте потрібні поля\n"
+        "   (Ціна, Знижка, Залишок, Ціна на маркетплейси тощо)\n"
+        "3. Виділіть змінені рядки кольором заповнення\n"
+        "4. Скористайтесь кнопкою 🎨 Конвертація файлу цін\n"
+        "5. Отриманий файл завантажте в SalesDrive:\n"
+        "   Товари та послуги → Імпорт → оберіть файл → Імпорт"
+    )
     from app.tasks.files_task import run_generate_prices_file
 
     run_generate_prices_file.delay(chat_id=str(callback.message.chat.id))
@@ -259,8 +269,11 @@ async def cb_files_convert(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await state.set_state(PriceFileConvert.waiting_file)
     await callback.message.edit_text(
-        "📎 Надішліть відредагований файл цін (.xlsx).\n\n"
-        "Залишаться тільки рядки з кольоровим заповненням."
+        "🎨 Конвертація файлу цін\n\n"
+        "Надішліть відредагований .xlsx файл де змінені товари виділені кольором заповнення.\n\n"
+        "Я залишу тільки виділені рядки — і поверну готовий файл для імпорту.\n\n"
+        "📥 Як завантажити в SalesDrive:\n"
+        "Товари та послуги → Імпорт → оберіть файл → натисніть Імпорт"
     )
 
 

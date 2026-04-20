@@ -162,7 +162,7 @@ def run_generate_prices_file(self, chat_id: str):
             ))
             return {"status": "empty"}
 
-        caption = f"💰 Файл для оновлення цін готовий: {count} позицій"
+        caption = f"💰 Файл готовий: {count} позицій"
 
         if settings.USE_MOCKS:
             _run(send_text(
@@ -177,7 +177,11 @@ def run_generate_prices_file(self, chat_id: str):
                 filename=path.name,
                 caption=caption,
             ))
-            _run(send_text(chat_id, caption, reply_markup=main_menu_keyboard()))
+            _run(send_text(
+                chat_id,
+                "✅ Відредагуйте файл, виділіть змінені рядки кольором і скористайтесь кнопкою 🎨 Конвертація файлу цін",
+                reply_markup=main_menu_keyboard(),
+            ))
 
         logger.info("Files/Prices DONE | rows=%d | file=%s", count, path.name)
         return {"status": "done", "count": count, "file": str(path)}
