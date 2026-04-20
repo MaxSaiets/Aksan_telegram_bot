@@ -70,6 +70,7 @@ def _parse_yml_to_rows(content: bytes) -> list[dict]:
             "Залишок на складі": stock,
         })
 
+    rows.sort(key=lambda r: str(r.get("SKU", "")))
     logger.info("YML parsed: %d offers", len(rows))
     return rows
 
