@@ -194,3 +194,59 @@ def run_generate_prices_file(self, chat_id: str):
             reply_markup=main_menu_keyboard(),
         ))
         raise self.retry(exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=1)
+def run_generate_descriptions_file(self, chat_id: str):
+    logger.info("Files/Descr START | chat=%s", chat_id[:12])
+    try:
+        def _progress(msg: str) -> None:
+            try:
+                _run(send_text(chat_id, msg))
+            except Exception:
+                pass
+
+        from app.services.description_updater import generate_descriptions_file
+
+        path, count = generate_descriptions_file(on_progress=_progress)
+
+        if count == 0:
+            _run(send_text(
+                chat_id,
+                "✅ Немає описів, які потребують оновлення розмірів.",
+                reply_markup=main_menu_keyboard(),
+            ))
+            return {"status": "empty"}
+
+        caption = f"📝 Файл оновлення описів готовий: {count} рядків"
+
+        if settings.USE_MOCKS:
+            _run(send_text(
+                chat_id,
+                f"[MOCK] {caption}\n📄 {path.name}",
+                reply_markup=main_menu_keyboard(),
+            ))
+        else:
+            _run(send_document(
+                chat_id,
+                file_path=path,
+                filename=path.name,
+                caption=caption,
+            ))
+            _run(send_text(
+                chat_id,
+                "✅ Завантажте файл у SalesDrive: Товари та послуги → Імпорт",
+                reply_markup=main_menu_keyboard(),
+            ))
+
+        logger.info("Files/Descr DONE | rows=%d | file=%s", count, path.name)
+        return {"status": "done", "count": count, "file": str(path)}
+
+    except Exception as exc:
+        logger.exception("Files/Descr FAILED: %s", exc)
+        _run(send_text(
+            chat_id,
+            f"❌ Помилка генерації файлу описів:\n{exc}",
+            reply_markup=main_menu_keyboard(),
+        ))
+        raise self.retry(exc=exc)

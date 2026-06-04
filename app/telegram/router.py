@@ -25,6 +25,7 @@ from app.telegram.keyboard import (
     CB_CANCEL_TASK,
     CB_FILES_BACK,
     CB_FILES_CONVERT,
+    CB_FILES_DESCR,
     CB_FILES_PRICES,
     CB_FILES_REPORT,
     CB_FILES_ROZETKA,
@@ -323,6 +324,21 @@ async def handle_price_file(message: Message, state: FSMContext) -> None:
             caption=f"✅ Готово: {kept} рядків з кольоровим заповненням",
         )
     await message.answer("Оберіть дію:", reply_markup=main_menu_keyboard())
+
+
+@router.callback_query(F.data == CB_FILES_DESCR)
+async def cb_files_descr(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await callback.message.edit_text(
+        "📝 Оновлення описів — генерую файл...\n\n"
+        "Збираю заміри по всіх розмірах кожної моделі та дописую повну "
+        "таблицю розмірів в опис (UA та RU).\n\n"
+        "📥 Готовий файл завантажте в SalesDrive:\n"
+        "Товари та послуги → Імпорт → оберіть файл → Імпорт"
+    )
+    from app.tasks.files_task import run_generate_descriptions_file
+
+    run_generate_descriptions_file.delay(chat_id=str(callback.message.chat.id))
 
 
 @router.callback_query(F.data == CB_FILES_BACK)
