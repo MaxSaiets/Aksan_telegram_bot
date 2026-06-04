@@ -26,8 +26,8 @@ from config import settings
 
 logger = get_logger(__name__)
 
-# "Заміри" (UA) or "Замеры" (RU) heading
-_HEAD = re.compile(r"(Замі?ри|Замеры)", re.IGNORECASE)
+# Measurement-section heading: "Заміри"/"Замеры"/"Розміри"/"Размеры"
+_HEAD = re.compile(r"(Замі?ри|Замеры|Розмі?ри|Размеры|Размiри)", re.IGNORECASE)
 # size token like "XS", "M", "2XL", "XS-S", "46" followed by "(value)"
 _PAIR = re.compile(r"([0-9A-Za-zА-Яа-яІіЇїЄє]+(?:-[0-9A-Za-zА-Яа-яІіЇїЄє]+)?)\s*\(\s*([^)]*?)\s*\)")
 # a measurement line: "- Label: <values...>" up to the next "- Label:" or end
@@ -56,18 +56,13 @@ def _norm_label(label: str) -> str:
     return re.sub(r"[^а-яіїєa-z]", "", label.lower())
 
 
-def _split_measurements(desc: str) -> tuple[str, str | None]:
-    """Return (intro_html, heading_word). intro keeps original HTML untouched."""
-    m = _HEAD.search(desc)
-    if not m:
-        return desc, None
-    head_word = m.group(1)
-    # Cut at the opening of the <div>/<p> element that wraps the heading
-    before = desc[: m.start()]
-    cut = max(before.rfind("<div"), before.rfind("<p"), before.rfind("<P"), before.rfind("<DIV"))
-    if cut < 0:
-        cut = m.start()
-    return desc[:cut], head_word
+def _render_lines(merged: "OrderedDict[str, OrderedDict[str, str]]", head_word: str) -> str:
+    lines = [f"{head_word}:"]
+    for label, sizes in merged.items():
+        tokens = sorted(sizes.keys(), key=_size_key)
+        parts = ", ".join(f"{t} ({sizes[t]})" for t in tokens)
+        lines.append(f"- {label}: {parts}")
+    return "<br />".join(lines)
 
 
 def _parse_table(desc: str) -> "OrderedDict[str, OrderedDict[str, str]]":
@@ -160,26 +155,27 @@ def _merge_group(
     return merged
 
 
-def _render_block(merged: "OrderedDict[str, OrderedDict[str, str]]", head_word: str) -> str:
-    if not merged:
-        return ""
-    lines = [f"{head_word}:"]
-    for label, sizes in merged.items():
-        tokens = sorted(sizes.keys(), key=_size_key)
-        parts = ", ".join(f"{t} ({sizes[t]})" for t in tokens)
-        lines.append(f"- {label}: {parts}")
-    body = "<br />".join(lines)
-    return f"<div><br />{body}</div>"
-
-
 def _rebuild(desc: str, merged: "OrderedDict[str, OrderedDict[str, str]]", default_head: str) -> str:
+    """
+    Replace the measurement region in-place (preserving the surrounding HTML),
+    or append a fresh block if the description has no measurement heading.
+    """
     if not merged:
         return desc
-    intro, head_word = _split_measurements(desc)
-    head_word = head_word or default_head
-    block = _render_block(merged, head_word)
-    intro = intro.rstrip()
-    return f"{intro}\n{block}"
+
+    m = _HEAD.search(desc)
+    if m is None:
+        # No heading in this description — append as a separate block.
+        body = _render_lines(merged, default_head)
+        return f"{desc.rstrip()}\n<div><br />{body}</div>"
+
+    head_word = m.group(1)
+    body = _render_lines(merged, head_word)
+
+    # Region to replace = from heading start to the end of the last size value
+    pairs = list(_PAIR.finditer(desc, m.end()))
+    region_end = pairs[-1].end() if pairs else len(desc)
+    return desc[: m.start()] + body + desc[region_end:]
 
 
 def _load_offers(content: bytes) -> list[ET.Element]:
