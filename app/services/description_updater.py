@@ -188,13 +188,47 @@ def _load_offers(content: bytes) -> list[ET.Element]:
     return shop.findall(".//offer")
 
 
+def _build_translation(offers: list[ET.Element]) -> tuple[dict[str, str], dict[str, str]]:
+    """
+    Learn UA<->RU measurement-label translation from offers that have both
+    tables. Labels are paired positionally; the most common counterpart wins.
+    """
+    ua_to_ru: dict[str, "defaultdict[str, int]"] = defaultdict(lambda: defaultdict(int))
+    ru_to_ua: dict[str, "defaultdict[str, int]"] = defaultdict(lambda: defaultdict(int))
+    for offer in offers:
+        t_ru = list(_parse_table(offer.findtext("description") or "").keys())
+        t_ua = list(_parse_table(offer.findtext("description_ua") or "").keys())
+        if t_ru and t_ua and len(t_ru) == len(t_ua):
+            for ru, ua in zip(t_ru, t_ua):
+                ua_to_ru[ua][ru] += 1
+                ru_to_ua[ru][ua] += 1
+
+    def _best(d):
+        return {k: max(v.items(), key=lambda kv: kv[1])[0] for k, v in d.items()}
+
+    return _best(ua_to_ru), _best(ru_to_ua)
+
+
+def _translate_table(
+    merged: "OrderedDict[str, OrderedDict[str, str]]",
+    mapping: dict[str, str],
+) -> "OrderedDict[str, OrderedDict[str, str]]":
+    out: "OrderedDict[str, OrderedDict[str, str]]" = OrderedDict()
+    for label, sizes in merged.items():
+        tlabel = mapping.get(label, label)
+        bucket = out.setdefault(tlabel, OrderedDict())
+        for token, value in sizes.items():
+            bucket.setdefault(token, value)
+    return out
+
+
 def generate_descriptions_file(
     output_path: Path | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> tuple[Path, int]:
     _progress = on_progress or (lambda _: None)
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now().strftime("%d.%m.%Y")
     if output_path is None:
         output_path = settings.temp_dir / f"update_rs_descr_{ts}.xlsx"
 
@@ -231,6 +265,7 @@ def generate_descriptions_file(
     all_ua = [o.findtext("description_ua") or "" for o in offers]
     freq_ru = _global_label_freq(all_ru)
     freq_ua = _global_label_freq(all_ua)
+    ua2ru, ru2ua = _build_translation(offers)
 
     _progress(f"[3/4] Аналізую заміри у {len(groups)} групах...")
     rows: list[dict] = []
@@ -239,6 +274,14 @@ def generate_descriptions_file(
         ua_descs = [o.findtext("description_ua") or "" for o in items]
         merged_ru = _merge_group(ru_descs, freq_ru)
         merged_ua = _merge_group(ua_descs, freq_ua)
+
+        # Cross-fill: if one language lacks a measurement table, translate the
+        # other language's table (values are identical, only labels differ).
+        if merged_ua and not merged_ru:
+            merged_ru = _translate_table(merged_ua, ua2ru)
+        elif merged_ru and not merged_ua:
+            merged_ua = _translate_table(merged_ru, ru2ua)
+
         if not merged_ru and not merged_ua:
             continue
 
