@@ -2,6 +2,10 @@
 
 Telegram bot for processing product videos and photos, publishing processed media to a Telegram group, and generating export files for Rozetka and the website.
 
+> **Нова сесія / передача проєкту?** Почни з [docs/HANDOFF.md](docs/HANDOFF.md) —
+> там зібрано все: огляд, нові фічі (ціни / конвертація / оновлення описів),
+> точні команди запуску локально та повний гайд з деплою на сервер.
+
 ## What the bot does
 
 The bot supports four main workflows:
