@@ -4,7 +4,6 @@ Fetch all videos from the YouTube channel and parse titles.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from app.services.sku_parser import parse_video_caption
 from app.utils.logger import get_logger
@@ -65,20 +64,17 @@ def _get_youtube_service():
     from google.auth.transport.requests import Request
     from googleapiclient.discovery import build
 
-    scopes = [
-        "https://www.googleapis.com/auth/youtube.upload",
-        "https://www.googleapis.com/auth/youtube.readonly",
-    ]
+    from app.services.youtube_uploader import _token_file
 
-    token_file = Path("token.json")
+    token_file = _token_file()
     if not token_file.exists():
-        raise RuntimeError("token.json not found - run scripts/youtube_auth.py first")
+        raise RuntimeError(f"token.json not found at {token_file} - run scripts/youtube_auth.py first")
 
     creds_data = json.loads(token_file.read_text(encoding="utf-8"))
-    creds = google.oauth2.credentials.Credentials.from_authorized_user_info(
-        creds_data,
-        scopes,
-    )
+    # Reuse whatever scopes were actually granted when the token was created -
+    # requesting a different/narrower scope list on refresh can be rejected by
+    # Google with `invalid_scope` if it doesn't exactly match the original grant.
+    creds = google.oauth2.credentials.Credentials.from_authorized_user_info(creds_data)
 
     if creds.expired and creds.refresh_token:
         creds.refresh(Request())
