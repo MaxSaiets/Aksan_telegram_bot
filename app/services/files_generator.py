@@ -196,7 +196,13 @@ def generate_rozetka_file(on_progress: Callable[[str], None] | None = None) -> t
     _progress("[4/4] Записую Excel...")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = settings.temp_dir / f"rozetka_videos_{ts}.xlsx"
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=[
+        "Код товару на ROZETKA",
+        "Посилання на товар на сайті ROZETKA",
+        "ID товару у вашому прайс-листі",
+        "Назва товару",
+        "Посилання на відео",
+    ])
     with pd.ExcelWriter(str(out), engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Додавання відеоогляда")
         _autofit(writer.sheets["Додавання відеоогляда"], df)
@@ -255,7 +261,7 @@ def generate_site_file(on_progress: Callable[[str], None] | None = None) -> tupl
     _progress("[4/4] Записую Excel...")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = settings.temp_dir / f"site_videos_{ts}.xlsx"
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=["SKU", "Посилання на відео"])
     with pd.ExcelWriter(str(out), engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Відео для сайту")
         _autofit(writer.sheets["Відео для сайту"], df)
