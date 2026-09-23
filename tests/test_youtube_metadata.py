@@ -2,7 +2,7 @@ from config import settings
 from app.services.youtube_metadata import build_youtube_metadata
 
 
-def test_metadata_preserves_exact_title_and_adds_product_context(monkeypatch):
+def test_metadata_preserves_exact_title_and_uses_natural_seo_description(monkeypatch):
     monkeypatch.setattr(settings, "YOUTUBE_BRAND_NAME", "Aksan")
     monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "")
     monkeypatch.setattr(settings, "YOUTUBE_EXTRA_TAGS", "")
@@ -10,11 +10,13 @@ def test_metadata_preserves_exact_title_and_adds_product_context(monkeypatch):
     metadata = build_youtube_metadata("26.3048_Aksan_костюм_норма_фрісПолар")
 
     assert metadata.title == "26.3048_Aksan_костюм_норма_фрісПолар"
-    assert "модель 26.3048" in metadata.description
-    assert "Розмірна група: норма" in metadata.description
-    assert "26.3048" in metadata.tags
-    assert "костюм" in metadata.tags
+    assert "26.3048" not in metadata.description
+    assert "Розмірна група" not in metadata.description
+    assert "модель" not in metadata.description.casefold()
+    assert metadata.description.count("#") == 5
+    assert "жіночий костюм" in metadata.tags
     assert "жіночий одяг" in metadata.tags
+    assert len(metadata.tags) > 10
     assert "Завантажено через Telegram" not in metadata.description
 
 

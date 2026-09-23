@@ -120,6 +120,7 @@ class TestVideoPipeline:
 
         assert result["status"] == "done"
         assert captured["title"] == "25.2888_норма_aksan"
-        assert "25.2888" in captured["description"]
+        assert "25.2888" not in captured["description"]
+        assert captured["description"].count("#") == 5
         assert "Chat:" not in captured["description"]
-        assert "25.2888" in captured["tags"]
+        assert "жіночий одяг" in captured["tags"]

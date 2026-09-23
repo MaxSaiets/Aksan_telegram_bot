@@ -6,9 +6,11 @@ Upload videos to YouTube.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from app.services.youtube_metadata import build_youtube_metadata
 from app.utils.logger import get_logger
 from config import settings
 
@@ -24,6 +26,16 @@ YOUTUBE_AUTH_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
 ]
+
+
+@dataclass(frozen=True)
+class YouTubeMetadataUpdate:
+    """The metadata applied to one existing YouTube video."""
+
+    video_id: str
+    title: str
+    description: str
+    tags: list[str]
 
 
 def _project_file(path_value: str | Path) -> Path:
@@ -66,6 +78,109 @@ def _missing_scopes(creds_data: dict, required_scopes: list[str]) -> list[str]:
     if not token_scopes:
         return []
     return [scope for scope in required_scopes if scope not in token_scopes]
+
+
+def _authorized_youtube_service():
+    """Create a YouTube client from the stored OAuth grant and refresh it if needed."""
+    token_file = _token_file()
+    if not token_file.exists():
+        raise FileNotFoundError(f"token.json not found at {token_file}")
+
+    import google.oauth2.credentials
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+
+    creds = google.oauth2.credentials.Credentials.from_authorized_user_info(
+        _load_token_data(token_file)
+    )
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+        token_file.write_text(creds.to_json(), encoding="utf-8")
+    return build("youtube", "v3", credentials=creds)
+
+
+def _existing_video_snippet(youtube, video_id: str) -> dict:
+    response = youtube.videos().list(part="snippet", id=video_id).execute()
+    items = response.get("items", [])
+    if not items:
+        raise ValueError(f"YouTube video not found or not accessible: {video_id}")
+    return dict(items[0].get("snippet") or {})
+
+
+def prepare_existing_video_metadata(video_id: str) -> YouTubeMetadataUpdate:
+    """Read an existing video and calculate its new SEO metadata without writing."""
+    youtube = _authorized_youtube_service()
+    snippet = _existing_video_snippet(youtube, video_id)
+    title = str(snippet.get("title") or "").strip()
+    if not title:
+        raise ValueError(f"YouTube video has no title: {video_id}")
+    metadata = build_youtube_metadata(title, list(snippet.get("tags") or []))
+    return YouTubeMetadataUpdate(
+        video_id=video_id,
+        title=title,
+        description=metadata.description,
+        tags=metadata.tags,
+    )
+
+
+def update_existing_video_metadata(video_id: str) -> YouTubeMetadataUpdate:
+    """Update description/tags only while preserving the existing title and snippet settings."""
+    youtube = _authorized_youtube_service()
+    snippet = _existing_video_snippet(youtube, video_id)
+    title = str(snippet.get("title") or "").strip()
+    if not title:
+        raise ValueError(f"YouTube video has no title: {video_id}")
+
+    metadata = build_youtube_metadata(title, list(snippet.get("tags") or []))
+    updated_snippet = {
+        "title": title,
+        "description": metadata.description,
+        "tags": metadata.tags,
+        "categoryId": str(snippet.get("categoryId") or "22"),
+        "defaultLanguage": str(snippet.get("defaultLanguage") or settings.YOUTUBE_DEFAULT_LANGUAGE),
+    }
+    if snippet.get("defaultAudioLanguage"):
+        updated_snippet["defaultAudioLanguage"] = snippet["defaultAudioLanguage"]
+
+    youtube.videos().update(
+        part="snippet",
+        body={"id": video_id, "snippet": updated_snippet},
+    ).execute()
+    logger.info("Updated YouTube metadata: video_id=%s title=%s", video_id, title)
+    return YouTubeMetadataUpdate(
+        video_id=video_id,
+        title=title,
+        description=metadata.description,
+        tags=metadata.tags,
+    )
+
+
+def list_channel_upload_video_ids() -> list[str]:
+    """Return every video id from the authenticated channel's uploads playlist."""
+    youtube = _authorized_youtube_service()
+    channels = youtube.channels().list(part="contentDetails", mine=True).execute()
+    channel_items = channels.get("items", [])
+    if not channel_items:
+        raise ValueError("No YouTube channel is available for the current token")
+
+    uploads_id = channel_items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    video_ids: list[str] = []
+    page_token = None
+    while True:
+        response = youtube.playlistItems().list(
+            part="contentDetails",
+            playlistId=uploads_id,
+            maxResults=50,
+            pageToken=page_token,
+        ).execute()
+        video_ids.extend(
+            item["contentDetails"]["videoId"]
+            for item in response.get("items", [])
+            if item.get("contentDetails", {}).get("videoId")
+        )
+        page_token = response.get("nextPageToken")
+        if not page_token:
+            return video_ids
 
 
 def delete_from_youtube(youtube_url: str) -> bool:

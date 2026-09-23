@@ -1,29 +1,25 @@
-"""Build concise, search-friendly metadata without changing video titles."""
+"""Build natural, search-friendly YouTube metadata without changing titles."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 
-from app.services.sku_parser import parse_video_caption
 from config import settings
 
 
-_CATEGORY_COPY = {
-    "норма": "Розмірна група: норма (40–44, за наявності може бути 46).",
-    "ботал": "Розмірна група: ботал (50–54).",
-    "супер ботал": "Розмірна група: супер ботал (56–60).",
-}
-_IGNORED_TERMS = {
-    "aksan",
-    "аксан",
-    "норма",
-    "норм",
-    "ботал",
-    "бот",
-    "супер",
-    "super",
-}
 _TAG_BUDGET = 450
+_PRODUCT_KEYWORDS = {
+    "костюм": ("жіночий костюм", ["жіночий костюм", "костюм жіночий", "костюми жіночі"]),
+    "сукня": ("жіноча сукня", ["жіноча сукня", "сукня жіноча", "сукні жіночі"]),
+    "плаття": ("жіноча сукня", ["жіноча сукня", "плаття жіноче", "сукні жіночі"]),
+    "блуза": ("жіноча блуза", ["жіноча блуза", "блузка жіноча"]),
+    "сорочка": ("жіноча сорочка", ["жіноча сорочка", "сорочка жіноча"]),
+    "штани": ("жіночі штани", ["жіночі штани", "штани жіночі"]),
+    "спідниця": ("жіноча спідниця", ["жіноча спідниця", "спідниця жіноча"]),
+    "жакет": ("жіночий жакет", ["жіночий жакет", "жакет жіночий"]),
+    "кардиган": ("жіночий кардиган", ["жіночий кардиган", "кардиган жіночий"]),
+    "худі": ("жіноче худі", ["жіноче худі", "худі жіноче"]),
+    "светр": ("жіночий светр", ["жіночий светр", "светр жіночий"]),
+}
 
 
 @dataclass(frozen=True)
@@ -47,25 +43,33 @@ def _unique(items: list[str]) -> list[str]:
     return result
 
 
-def _product_terms(caption: str, model: str | None) -> list[str]:
-    terms = re.findall(r"[^_\s]+", caption or "")
-    result: list[str] = []
-
-    for term in terms:
-        normalized = term.strip(".,;:!?()[]{}\"").casefold()
-        if not normalized or normalized == (model or "").casefold():
-            continue
-        if normalized in _IGNORED_TERMS:
-            continue
-        if normalized.isdigit():
-            continue
-        result.append(term.strip(".,;:!?()[]{}\""))
-
-    return _unique(result)[:4]
-
-
 def _configured_extra_tags() -> list[str]:
     return [tag.strip() for tag in settings.YOUTUBE_EXTRA_TAGS.split(",") if tag.strip()]
+
+
+def _product_context(source_text: str) -> tuple[str, list[str], list[str]]:
+    """Return human wording, related tags, and exactly five relevant hashtags."""
+    lowered = (source_text or "").casefold()
+    label = "жіночий одяг"
+    product_tags: list[str] = []
+    hashtags = ["#Aksan", "#жіночийодяг"]
+
+    for keyword, (candidate_label, candidate_tags) in _PRODUCT_KEYWORDS.items():
+        if keyword in lowered:
+            label = candidate_label
+            product_tags.extend(candidate_tags)
+            hashtags.append(f"#{candidate_label.replace(' ', '')}")
+            break
+
+    if "трійка" in lowered:
+        product_tags.extend(["костюм трійка", "костюм трійка жіночий"])
+        hashtags.append("#костюмтрійка")
+    if "велюр" in lowered or "велор" in lowered:
+        product_tags.extend(["велюровий костюм", "костюм з велюру", "велюр"])
+        hashtags.append("#велюровийкостюм")
+
+    hashtags.extend(["#українськийодяг", "#жіночамода", "#новинкиодягу"])
+    return label, _unique(product_tags), _unique(hashtags)[:5]
 
 
 def _within_tag_budget(tags: list[str]) -> list[str]:
@@ -80,27 +84,18 @@ def _within_tag_budget(tags: list[str]) -> list[str]:
     return result
 
 
-def build_youtube_metadata(caption: str) -> YouTubeMetadata:
+def build_youtube_metadata(caption: str, additional_tags: list[str] | None = None) -> YouTubeMetadata:
     """Create description and tags while keeping the supplied title unchanged."""
     title = (caption or "").strip()
-    parsed = parse_video_caption(title)
-    model = parsed["model"]
-    category = parsed["category"]
     brand = settings.YOUTUBE_BRAND_NAME.strip() or "Aksan"
-    product_terms = _product_terms(title, model)
+    existing_tags = _unique(additional_tags or [])
+    product_label, product_tags, hashtags = _product_context(" ".join([title, *existing_tags]))
 
-    product_name = " ".join(product_terms)
-    if product_name and model:
-        lead = f"{product_name.capitalize()} {brand} — модель {model}."
-    elif model:
-        lead = f"Жіночий одяг {brand} — модель {model}."
-    else:
-        lead = f"Новинка жіночого одягу від {brand}."
-
-    description_lines = [lead]
-    if category in _CATEGORY_COPY:
-        description_lines.append(_CATEGORY_COPY[category])
-    description_lines.append(f"Дивіться відеоогляд моделі та інші новинки {brand} на каналі.")
+    description_lines = [
+        f"{product_label.capitalize()} від {brand}: фактура, крій і деталі виробу у відеоогляді.",
+        f"Новинки жіночого одягу {brand} для ваших повсякденних та особливих образів.",
+        " ".join(hashtags),
+    ]
 
     footer = settings.YOUTUBE_DESCRIPTION_FOOTER.strip()
     if footer:
@@ -109,12 +104,18 @@ def build_youtube_metadata(caption: str) -> YouTubeMetadata:
     tags = _within_tag_budget([
         brand,
         "Аксан",
-        model or "",
-        f"модель {model}" if model else "",
-        *product_terms,
         "жіночий одяг",
+        "жіночий одяг Україна",
+        "український жіночий одяг",
+        "жіноча мода",
+        "модний одяг",
+        "новинки жіночого одягу",
+        "магазин жіночого одягу",
+        "виробник жіночого одягу",
+        "Aksan clothing",
+        *product_tags,
         "одяг Україна",
-        category or "",
+        *existing_tags,
         *_configured_extra_tags(),
     ])
 

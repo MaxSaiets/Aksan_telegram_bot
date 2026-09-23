@@ -34,6 +34,8 @@ def test_upload_reuses_scopes_saved_in_token(tmp_path, monkeypatch, temp_video):
 
     requested_scopes = []
     creds = MagicMock()
+    creds.expired = False
+    creds.refresh_token = None
 
     def from_authorized_user_info(data, scopes=None):
         requested_scopes.append(scopes)
@@ -65,3 +67,55 @@ def test_upload_reuses_scopes_saved_in_token(tmp_path, monkeypatch, temp_video):
     assert payload["snippet"]["description"] == "Опис моделі"
     assert payload["snippet"]["tags"] == ["Aksan", "26.3048"]
     assert payload["snippet"]["defaultLanguage"] == settings.YOUTUBE_DEFAULT_LANGUAGE
+
+
+def test_update_existing_video_metadata_preserves_title_and_category(tmp_path, monkeypatch):
+    import google.oauth2.credentials
+    import googleapiclient.discovery
+    import app.services.youtube_uploader as youtube_uploader
+
+    monkeypatch.setattr(settings, "USE_MOCKS", False)
+    token_file = tmp_path / "token.json"
+    token_file.write_text(
+        '{"token": "abc", "refresh_token": "def", "token_uri": "https://oauth2.googleapis.com/token", "client_id": "cid", "client_secret": "secret", "scopes": ["https://www.googleapis.com/auth/youtube"]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(youtube_uploader, "_token_file", lambda: token_file)
+
+    creds = MagicMock()
+    creds.expired = False
+    creds.refresh_token = None
+    youtube = MagicMock()
+    youtube.videos().list.return_value.execute.return_value = {
+        "items": [{
+            "id": "Q7aK1XXbaow",
+            "snippet": {
+                "title": "26.3048_Aksan_костюм_норма_фрісПолар",
+                "description": "Старий опис",
+                "tags": ["старий тег"],
+                "categoryId": "22",
+                "defaultLanguage": "uk",
+            },
+        }],
+    }
+    youtube.videos().update.return_value.execute.return_value = {"id": "Q7aK1XXbaow"}
+
+    monkeypatch.setattr(
+        google.oauth2.credentials.Credentials,
+        "from_authorized_user_info",
+        staticmethod(lambda data, scopes=None: creds),
+    )
+    monkeypatch.setattr(googleapiclient.discovery, "build", lambda *args, **kwargs: youtube)
+
+    result = youtube_uploader.update_existing_video_metadata("Q7aK1XXbaow")
+
+    assert result.video_id == "Q7aK1XXbaow"
+    assert result.title == "26.3048_Aksan_костюм_норма_фрісПолар"
+    payload = youtube.videos().update.call_args.kwargs["body"]
+    assert payload["snippet"]["title"] == "26.3048_Aksan_костюм_норма_фрісПолар"
+    assert payload["snippet"]["categoryId"] == "22"
+    assert payload["snippet"]["defaultLanguage"] == "uk"
+    assert "Розмірна група" not in payload["snippet"]["description"]
+    assert payload["snippet"]["description"].count("#") == 5
+    assert "жіночий костюм" in payload["snippet"]["tags"]
+    assert "старий тег" in payload["snippet"]["tags"]
