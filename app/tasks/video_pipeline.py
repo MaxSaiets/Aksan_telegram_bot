@@ -4,6 +4,7 @@ Main Celery task: orchestrates the full video processing pipeline.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from pathlib import Path
 
 from config import settings
@@ -108,7 +109,14 @@ def _status(chat_id: str, step: int, total: int, message: str) -> None:
 
 
 @celery_app.task(bind=True, base=AbortableTask, max_retries=_MAX_RETRIES, default_retry_delay=20)
-def run_video_pipeline(self, chat_id: str, file_id: str, caption: str, message_id: int | None = None):
+def run_video_pipeline(
+    self,
+    chat_id: str,
+    file_id: str,
+    caption: str,
+    message_id: int | None = None,
+    publish_at: str | None = None,
+):
     """
     Process one incoming video.
 
@@ -157,11 +165,13 @@ def run_video_pipeline(self, chat_id: str, file_id: str, caption: str, message_i
 
         _status(chat_id, 2, total_steps, "Завантажую на YouTube...")
         youtube_metadata = build_youtube_metadata(caption)
+        scheduled_at = datetime.fromisoformat(publish_at) if publish_at else None
         youtube_url = upload_to_youtube(
             local_path,
             title=youtube_metadata.title,
             description=youtube_metadata.description,
             tags=youtube_metadata.tags,
+            publish_at=scheduled_at,
         )
         logger.info("YouTube URL: %s", youtube_url)
 
@@ -178,9 +188,12 @@ def run_video_pipeline(self, chat_id: str, file_id: str, caption: str, message_i
         group_message_id = _async(broadcast_to_group(processed_path, caption))
 
         set_done(video_id, youtube_url, settings.TELEGRAM_TARGET_CHAT_ID, group_message_id)
+        schedule_note = ""
+        if scheduled_at:
+            schedule_note = f"\n📅 YouTube публікація: {scheduled_at.strftime('%d.%m.%Y %H:%M')}"
         _notify(
             chat_id,
-            f"✅ Готово!\n▶️ YouTube: {youtube_url}",
+            f"✅ Готово!\n▶️ YouTube: {youtube_url}{schedule_note}",
             reply_markup=main_menu_keyboard(),
         )
 

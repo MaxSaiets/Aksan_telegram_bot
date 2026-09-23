@@ -106,7 +106,7 @@ class TestVideoPipeline:
         async def fake_download(file_id: str, chat_id=None, message_id=None):
             return source
 
-        def fake_upload(video_path, title, description="", tags=None, on_progress=None):
+        def fake_upload(video_path, title, description="", tags=None, publish_at=None, on_progress=None):
             captured["title"] = title
             captured["description"] = description
             captured["tags"] = tags
@@ -124,3 +124,30 @@ class TestVideoPipeline:
         assert captured["description"].count("#") == 5
         assert "Chat:" not in captured["description"]
         assert "жіночий одяг" in captured["tags"]
+
+    def test_pipeline_passes_scheduled_publish_time_to_youtube(self, tmp_path):
+        source = tmp_path / "video.mp4"
+        source.write_bytes(b"video")
+        captured = {}
+
+        async def fake_download(file_id: str, chat_id=None, message_id=None):
+            return source
+
+        def fake_upload(video_path, title, description="", tags=None, publish_at=None, on_progress=None):
+            captured["publish_at"] = publish_at
+            return "https://youtube.com/watch?v=scheduled"
+
+        from app.tasks.video_pipeline import run_video_pipeline
+        with patch("app.tasks.video_pipeline.download_telegram_media", side_effect=fake_download), \
+             patch("app.tasks.video_pipeline.overlay_text", side_effect=lambda path, _: path), \
+             patch("app.tasks.video_pipeline.upload_to_youtube", side_effect=fake_upload), \
+             patch("app.tasks.video_pipeline.broadcast_to_group"):
+            result = run_video_pipeline.apply(kwargs={
+                "chat_id": "123456789",
+                "file_id": "file_id_scheduled",
+                "caption": "26.3057_Aksan_штани_норма_байка",
+                "publish_at": "2026-09-24T09:15:00+03:00",
+            }).get()
+
+        assert result["status"] == "done"
+        assert captured["publish_at"].isoformat() == "2026-09-24T09:15:00+03:00"

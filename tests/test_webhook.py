@@ -86,7 +86,7 @@ class TestRouterHandlers:
             asyncio.run(btn_send_video(msg, state))
 
         state.set_state.assert_awaited_once_with(VideoUpload.waiting_video)
-        state.update_data.assert_awaited_once_with(queue_count=0)
+        state.update_data.assert_awaited_once_with(queue_count=0, pending_videos=[])
 
     def test_btn_send_photos_sets_state(self):
         from app.telegram.router import btn_send_photos
@@ -100,25 +100,37 @@ class TestRouterHandlers:
         state.set_state.assert_awaited_once_with(PhotoUpload.waiting_photos)
         state.update_data.assert_awaited_once_with(photo_file_ids=[], photo_count=0)
 
-    def test_handle_video_dispatches_immediately(self):
+    def test_handle_video_collects_a_batch_item(self):
         from app.telegram.router import handle_video
 
         msg = _make_mock_message(video={"file_id": "tg_file_id_abc123"}, caption="20.8934_РЅРѕСЂРјР°")
         state = _make_mock_state(data={"queue_count": 0})
-        mock_task = MagicMock()
-        mock_task.id = "fake-task-id-abcdef"
+        asyncio.run(handle_video(msg, state))
 
-        with patch("app.tasks.video_pipeline.run_video_pipeline") as mock_pipeline:
-            mock_pipeline.delay = MagicMock(return_value=mock_task)
-            asyncio.run(handle_video(msg, state))
-
-        mock_pipeline.delay.assert_called_once_with(
-            chat_id="123456789",
-            file_id="tg_file_id_abc123",
-            caption="20.8934_РЅРѕСЂРјР°",
-            message_id=1,
+        state.update_data.assert_awaited_once_with(
+            queue_count=1,
+            pending_videos=[{
+                "file_id": "tg_file_id_abc123",
+                "caption": "20.8934_РЅРѕСЂРјР°",
+                "message_id": 1,
+            }],
         )
-        state.update_data.assert_awaited_once_with(queue_count=1)
+
+    def test_batch_title_list_fills_videos_without_captions(self):
+        from app.telegram.router import _resolve_batch_captions
+
+        captions = _resolve_batch_captions(
+            [
+                {"caption": "26.3057_Aksan_штани_норма_байка"},
+                {"caption": ""},
+            ],
+            "26.3065_Aksan_лонгслів_норма_віскоза",
+        )
+
+        assert captions == [
+            "26.3057_Aksan_штани_норма_байка",
+            "26.3065_Aksan_лонгслів_норма_віскоза",
+        ]
 
     def test_handle_photo_collects_file_ids(self):
         from app.telegram.router import handle_photo

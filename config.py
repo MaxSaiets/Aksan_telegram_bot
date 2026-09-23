@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     YOUTUBE_DESCRIPTION_FOOTER: str = Field(default="")
     YOUTUBE_EXTRA_TAGS: str = Field(default="")
     YOUTUBE_DEFAULT_LANGUAGE: str = Field(default="uk")
+    YOUTUBE_TAG_TARGET_CHARACTERS: int = Field(default=490)
 
     # в”Ђв”Ђ Supabase в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     SUPABASE_URL: str = Field(default="https://mock.supabase.co")

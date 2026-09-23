@@ -1,5 +1,5 @@
 from config import settings
-from app.services.youtube_metadata import build_youtube_metadata
+from app.services.youtube_metadata import build_youtube_metadata, tag_character_count
 
 
 def test_metadata_preserves_exact_title_and_uses_natural_seo_description(monkeypatch):
@@ -17,6 +17,7 @@ def test_metadata_preserves_exact_title_and_uses_natural_seo_description(monkeyp
     assert "жіночий костюм" in metadata.tags
     assert "жіночий одяг" in metadata.tags
     assert len(metadata.tags) > 10
+    assert 450 <= tag_character_count(metadata.tags) <= 500
     assert "Завантажено через Telegram" not in metadata.description
 
 

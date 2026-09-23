@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -107,10 +108,25 @@ def _existing_video_snippet(youtube, video_id: str) -> dict:
     return dict(items[0].get("snippet") or {})
 
 
-def prepare_existing_video_metadata(video_id: str) -> YouTubeMetadataUpdate:
-    """Read an existing video and calculate its new SEO metadata without writing."""
-    youtube = _authorized_youtube_service()
-    snippet = _existing_video_snippet(youtube, video_id)
+def _existing_video_snippets(youtube, video_ids: list[str]) -> dict[str, dict]:
+    """Read snippets in the largest YouTube API batch supported by videos.list."""
+    snippets: dict[str, dict] = {}
+    for start in range(0, len(video_ids), 50):
+        response = youtube.videos().list(
+            part="snippet",
+            id=",".join(video_ids[start:start + 50]),
+        ).execute()
+        snippets.update({
+            item["id"]: dict(item.get("snippet") or {})
+            for item in response.get("items", [])
+        })
+    missing = [video_id for video_id in video_ids if video_id not in snippets]
+    if missing:
+        raise ValueError(f"YouTube videos not found or not accessible: {', '.join(missing)}")
+    return snippets
+
+
+def _metadata_for_snippet(video_id: str, snippet: dict) -> YouTubeMetadataUpdate:
     title = str(snippet.get("title") or "").strip()
     if not title:
         raise ValueError(f"YouTube video has no title: {video_id}")
@@ -123,17 +139,26 @@ def prepare_existing_video_metadata(video_id: str) -> YouTubeMetadataUpdate:
     )
 
 
+def prepare_existing_video_metadata(video_id: str) -> YouTubeMetadataUpdate:
+    """Read an existing video and calculate its new SEO metadata without writing."""
+    youtube = _authorized_youtube_service()
+    return _metadata_for_snippet(video_id, _existing_video_snippet(youtube, video_id))
+
+
+def prepare_existing_videos_metadata(video_ids: list[str]) -> list[YouTubeMetadataUpdate]:
+    """Preview metadata for many videos with batched reads and no writes."""
+    youtube = _authorized_youtube_service()
+    snippets = _existing_video_snippets(youtube, video_ids)
+    return [_metadata_for_snippet(video_id, snippets[video_id]) for video_id in video_ids]
+
+
 def update_existing_video_metadata(video_id: str) -> YouTubeMetadataUpdate:
     """Update description/tags only while preserving the existing title and snippet settings."""
     youtube = _authorized_youtube_service()
     snippet = _existing_video_snippet(youtube, video_id)
-    title = str(snippet.get("title") or "").strip()
-    if not title:
-        raise ValueError(f"YouTube video has no title: {video_id}")
-
-    metadata = build_youtube_metadata(title, list(snippet.get("tags") or []))
+    metadata = _metadata_for_snippet(video_id, snippet)
     updated_snippet = {
-        "title": title,
+        "title": metadata.title,
         "description": metadata.description,
         "tags": metadata.tags,
         "categoryId": str(snippet.get("categoryId") or "22"),
@@ -146,13 +171,34 @@ def update_existing_video_metadata(video_id: str) -> YouTubeMetadataUpdate:
         part="snippet",
         body={"id": video_id, "snippet": updated_snippet},
     ).execute()
-    logger.info("Updated YouTube metadata: video_id=%s title=%s", video_id, title)
-    return YouTubeMetadataUpdate(
-        video_id=video_id,
-        title=title,
-        description=metadata.description,
-        tags=metadata.tags,
-    )
+    logger.info("Updated YouTube metadata: video_id=%s title=%s", video_id, metadata.title)
+    return metadata
+
+
+def update_existing_videos_metadata(video_ids: list[str]) -> list[YouTubeMetadataUpdate]:
+    """Apply metadata to many videos, batching reads while preserving every title."""
+    youtube = _authorized_youtube_service()
+    snippets = _existing_video_snippets(youtube, video_ids)
+    results: list[YouTubeMetadataUpdate] = []
+    for video_id in video_ids:
+        snippet = snippets[video_id]
+        metadata = _metadata_for_snippet(video_id, snippet)
+        updated_snippet = {
+            "title": metadata.title,
+            "description": metadata.description,
+            "tags": metadata.tags,
+            "categoryId": str(snippet.get("categoryId") or "22"),
+            "defaultLanguage": str(snippet.get("defaultLanguage") or settings.YOUTUBE_DEFAULT_LANGUAGE),
+        }
+        if snippet.get("defaultAudioLanguage"):
+            updated_snippet["defaultAudioLanguage"] = snippet["defaultAudioLanguage"]
+        youtube.videos().update(
+            part="snippet",
+            body={"id": video_id, "snippet": updated_snippet},
+        ).execute()
+        results.append(metadata)
+        logger.info("Updated YouTube metadata: video_id=%s title=%s", video_id, metadata.title)
+    return results
 
 
 def list_channel_upload_video_ids() -> list[str]:
@@ -238,6 +284,7 @@ def upload_to_youtube(
     title: str,
     description: str = "",
     tags: list[str] | None = None,
+    publish_at: datetime | None = None,
     on_progress=None,
 ) -> str:
     """
@@ -278,6 +325,15 @@ def upload_to_youtube(
         logger.info("YouTube token saved to %s", token_file)
 
     youtube = build("youtube", "v3", credentials=creds)
+    status = {"privacyStatus": "public"}
+    if publish_at:
+        if publish_at.tzinfo is None:
+            raise ValueError("publish_at must include a timezone")
+        status = {
+            "privacyStatus": "private",
+            "publishAt": publish_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+
     request_body = {
         "snippet": {
             "title": title,
@@ -285,7 +341,7 @@ def upload_to_youtube(
             "categoryId": "22",
             "defaultLanguage": settings.YOUTUBE_DEFAULT_LANGUAGE,
         },
-        "status": {"privacyStatus": "public"},
+        "status": status,
     }
     if tags:
         request_body["snippet"]["tags"] = tags

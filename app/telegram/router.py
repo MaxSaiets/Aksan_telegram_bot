@@ -46,6 +46,7 @@ router = Router()
 router.message.filter(F.chat.type == "private")
 router.callback_query.filter(F.message.chat.type == "private")
 _photo_state_locks: dict[str, asyncio.Lock] = {}
+_video_state_locks: dict[str, asyncio.Lock] = {}
 
 
 def _is_allowed(user_id: int) -> bool:
@@ -62,6 +63,13 @@ def _photo_lock(chat_id: int | str) -> asyncio.Lock:
     if key not in _photo_state_locks:
         _photo_state_locks[key] = asyncio.Lock()
     return _photo_state_locks[key]
+
+
+def _video_lock(chat_id: int | str) -> asyncio.Lock:
+    key = str(chat_id)
+    if key not in _video_state_locks:
+        _video_state_locks[key] = asyncio.Lock()
+    return _video_state_locks[key]
 
 
 def _is_image_document(message: Message) -> bool:
@@ -352,10 +360,14 @@ async def btn_send_video(message: Message, state: FSMContext) -> None:
     if not _is_allowed(message.from_user.id):
         return
     await state.set_state(VideoUpload.waiting_video)
-    await state.update_data(queue_count=0)
+    await state.update_data(queue_count=0, pending_videos=[])
     await message.answer(
-        "Надішліть відео з підписом.\n"
-        "Можна надсилати кілька відео підряд, вони автоматично стануть у чергу.",
+        "Надішліть усі відео пачкою.\n\n"
+        "Після останнього ролика:\n"
+        "• надішліть `готово`, якщо кожен ролик уже має підпис; або\n"
+        "• надішліть назви по одній на рядок у тому самому порядку, що й відео.\n\n"
+        "Я завантажу їх приватно та запланую публікації на YouTube у денні години.",
+        parse_mode="Markdown",
     )
 
 
@@ -379,31 +391,88 @@ async def btn_send_photos(message: Message, state: FSMContext) -> None:
 async def handle_video(message: Message, state: FSMContext) -> None:
     file_id = message.video.file_id
     caption = (message.caption or "").strip()
-    chat_id = str(message.chat.id)
+    async with _video_lock(message.chat.id):
+        data = await state.get_data()
+        pending = list(data.get("pending_videos", []))
+        pending.append({
+            "file_id": file_id,
+            "caption": caption,
+            "message_id": message.message_id,
+        })
+        queue_count = len(pending)
+        await state.update_data(queue_count=queue_count, pending_videos=pending)
 
-    if not caption:
-        await message.answer("Напишіть назву.")
+    suffix = "" if caption else " Назву додайте фінальним списком."
+    await message.answer(f"Відео #{queue_count} додано до пачки.{suffix}")
+
+
+def _resolve_batch_captions(items: list[dict], text: str) -> list[str] | None:
+    """Map a final title list to pending videos while preserving supplied captions."""
+    ready_words = {"готово", "готова", "done"}
+    missing_indexes = [index for index, item in enumerate(items) if not item.get("caption")]
+    if text.casefold() in ready_words:
+        return [item.get("caption", "") for item in items] if not missing_indexes else None
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) == len(items):
+        return lines
+    if len(lines) == len(missing_indexes):
+        captions = [item.get("caption", "") for item in items]
+        for index, caption in zip(missing_indexes, lines):
+            captions[index] = caption
+        return captions
+    return None
+
+
+@router.message(VideoUpload.waiting_video, F.text)
+async def handle_video_batch_titles(message: Message, state: FSMContext) -> None:
+    if not _is_allowed(message.from_user.id):
         return
 
-    data = await state.get_data()
-    queue_count = data.get("queue_count", 0) + 1
-    await state.update_data(queue_count=queue_count)
+    text = (message.text or "").strip()
+    if text in {BTN_RESET, BTN_SEND_VIDEO}:
+        return
 
+    async with _video_lock(message.chat.id):
+        data = await state.get_data()
+        items = list(data.get("pending_videos", []))
+        captions = _resolve_batch_captions(items, text)
+
+    if not items:
+        await message.answer("Спочатку надішліть хоча б одне відео.")
+        return
+    if not captions or any(not caption for caption in captions):
+        await message.answer(
+            f"Для {len(items)} відео надішліть {len(items)} назв по одній на рядок "
+            "або додайте назви лише для роликів без підпису."
+        )
+        return
+
+    from app.services.video_schedule import plan_publication_times
     from app.tasks.video_pipeline import run_video_pipeline
 
-    task = run_video_pipeline.delay(
-        chat_id=chat_id,
-        file_id=file_id,
-        caption=caption,
-        message_id=message.message_id,
-    )
+    slots = plan_publication_times(len(items))
+    task_ids: list[str] = []
+    for item, caption, slot in zip(items, captions, slots):
+        task = run_video_pipeline.delay(
+            chat_id=str(message.chat.id),
+            file_id=item["file_id"],
+            caption=caption,
+            message_id=item.get("message_id"),
+            publish_at=slot.isoformat(),
+        )
+        task_ids.append(task.id)
 
-    preview = caption[:80] + ("..." if len(caption) > 80 else "")
+    await state.clear()
+    preview_lines = [
+        f"{index}. {slot.strftime('%d.%m %H:%M')} - {caption[:45]}"
+        for index, (slot, caption) in enumerate(zip(slots, captions), start=1)
+    ]
     await message.answer(
-        f"Відео #{queue_count} прийнято в чергу.\n"
-        f"«{preview}»\n"
-        f"Task: {task.id[:8]}...",
-        reply_markup=cancel_task_keyboard(task.id),
+        f"✅ Заплановано {len(items)} відео для YouTube.\n\n"
+        + "\n".join(preview_lines)
+        + "\n\nРолики завантажаться приватно, а YouTube опублікує їх у цей час.",
+        reply_markup=main_menu_keyboard(),
     )
 
 

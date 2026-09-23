@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 from unittest.mock import MagicMock
 
 from config import settings
@@ -67,6 +68,40 @@ def test_upload_reuses_scopes_saved_in_token(tmp_path, monkeypatch, temp_video):
     assert payload["snippet"]["description"] == "Опис моделі"
     assert payload["snippet"]["tags"] == ["Aksan", "26.3048"]
     assert payload["snippet"]["defaultLanguage"] == settings.YOUTUBE_DEFAULT_LANGUAGE
+
+
+def test_upload_schedules_private_video_when_publish_time_is_supplied(tmp_path, monkeypatch, temp_video):
+    import google.oauth2.credentials
+    import googleapiclient.discovery
+    import googleapiclient.http
+    import app.services.youtube_uploader as youtube_uploader
+
+    monkeypatch.setattr(settings, "USE_MOCKS", False)
+    token_file = tmp_path / "token.json"
+    token_file.write_text(
+        '{"token":"abc","refresh_token":"def","token_uri":"https://oauth2.googleapis.com/token","client_id":"cid","client_secret":"secret","scopes":["https://www.googleapis.com/auth/youtube"]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(youtube_uploader, "_token_file", lambda: token_file)
+    creds = MagicMock()
+    creds.expired = False
+    creds.refresh_token = None
+    request = MagicMock()
+    request.next_chunk.return_value = (None, {"id": "scheduled-video"})
+    youtube = MagicMock()
+    youtube.videos().insert.return_value = request
+    monkeypatch.setattr(google.oauth2.credentials.Credentials, "from_authorized_user_info", staticmethod(lambda *_: creds))
+    monkeypatch.setattr(googleapiclient.discovery, "build", lambda *args, **kwargs: youtube)
+    monkeypatch.setattr(googleapiclient.http, "MediaFileUpload", lambda *args, **kwargs: object())
+
+    youtube_uploader.upload_to_youtube(
+        temp_video,
+        "26.3057_Aksan_штани_норма_байка",
+        publish_at=datetime.fromisoformat("2026-09-24T09:15:00+03:00"),
+    )
+
+    status = youtube.videos().insert.call_args.kwargs["body"]["status"]
+    assert status == {"privacyStatus": "private", "publishAt": "2026-09-24T06:15:00Z"}
 
 
 def test_update_existing_video_metadata_preserves_title_and_category(tmp_path, monkeypatch):

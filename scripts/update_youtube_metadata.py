@@ -13,7 +13,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.services.youtube_uploader import (
     list_channel_upload_video_ids,
     prepare_existing_video_metadata,
+    prepare_existing_videos_metadata,
     update_existing_video_metadata,
+    update_existing_videos_metadata,
 )
 
 
@@ -38,12 +40,19 @@ def main() -> int:
     mode = "APPLY" if args.apply else "DRY RUN"
     print(f"{mode}: {len(video_ids)} video(s)")
 
-    for video_id in video_ids:
-        metadata = (
+    metadata_items = (
+        update_existing_videos_metadata(video_ids)
+        if args.apply and args.all
+        else prepare_existing_videos_metadata(video_ids)
+        if not args.apply and args.all
+        else [
             update_existing_video_metadata(video_id)
             if args.apply
             else prepare_existing_video_metadata(video_id)
-        )
+            for video_id in video_ids
+        ]
+    )
+    for metadata in metadata_items:
         print(f"{metadata.video_id}: {metadata.title}")
         print(metadata.description)
         print(f"Tags ({len(metadata.tags)}): {', '.join(metadata.tags)}")

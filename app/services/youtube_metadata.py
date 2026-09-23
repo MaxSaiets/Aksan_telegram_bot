@@ -6,7 +6,37 @@ from dataclasses import dataclass
 from config import settings
 
 
-_TAG_BUDGET = 450
+_YOUTUBE_TAG_LIMIT = 500
+_BASE_DISCOVERY_TAGS = [
+    "Aksan",
+    "Аксан",
+    "Aksan clothing",
+    "Aksan Україна",
+    "Aksan жіночий одяг",
+    "жіночий одяг",
+    "жіночий одяг Україна",
+    "український жіночий одяг",
+    "український бренд одягу",
+    "виробник жіночого одягу",
+    "магазин жіночого одягу",
+    "інтернет магазин жіночого одягу",
+    "модний жіночий одяг",
+    "стильний жіночий одяг",
+    "новинки жіночого одягу",
+    "одяг для жінок",
+    "жіноча мода Україна",
+    "базовий гардероб жіночий",
+    "жіночі образи",
+    "одяг Україна",
+    "жіночий одяг від виробника",
+    "брендовий жіночий одяг",
+    "сучасна жіноча мода",
+    "українська мода",
+    "гардероб для жінок",
+    "жіночий одяг онлайн",
+    "купити жіночий одяг",
+    "українські бренди одягу",
+]
 _PRODUCT_KEYWORDS = {
     "костюм": ("жіночий костюм", ["жіночий костюм", "костюм жіночий", "костюми жіночі"]),
     "сукня": ("жіноча сукня", ["жіноча сукня", "сукня жіноча", "сукні жіночі"]),
@@ -82,15 +112,17 @@ def _product_context(source_text: str) -> tuple[str, list[str], list[str]]:
     return label, _unique(product_tags), _unique(hashtags)[:5]
 
 
+def tag_character_count(tags: list[str]) -> int:
+    """Match YouTube's 500-character rule, including commas and space quotes."""
+    return sum(len(tag) + (2 if " " in tag else 0) for tag in tags) + max(len(tags) - 1, 0)
+
+
 def _within_tag_budget(tags: list[str]) -> list[str]:
+    budget = min(max(settings.YOUTUBE_TAG_TARGET_CHARACTERS, 1), _YOUTUBE_TAG_LIMIT)
     result: list[str] = []
-    total = 0
     for tag in _unique(tags):
-        projected = total + len(tag) + (1 if result else 0)
-        if projected > _TAG_BUDGET:
-            break
-        result.append(tag)
-        total = projected
+        if tag_character_count([*result, tag]) <= budget:
+            result.append(tag)
     return result
 
 
@@ -134,20 +166,10 @@ def build_youtube_metadata(caption: str, additional_tags: list[str] | None = Non
 
     tags = _within_tag_budget([
         brand,
-        "Аксан",
-        "жіночий одяг",
-        "жіночий одяг Україна",
-        "український жіночий одяг",
-        "жіноча мода",
-        "модний одяг",
-        "новинки жіночого одягу",
-        "магазин жіночого одягу",
-        "виробник жіночого одягу",
-        "Aksan clothing",
         *product_tags,
-        "одяг Україна",
         *existing_tags,
         *_configured_extra_tags(),
+        *_BASE_DISCOVERY_TAGS,
     ])
 
     return YouTubeMetadata(
