@@ -4,6 +4,9 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import time
+
+import httpx
 
 from config import settings
 
@@ -62,32 +65,43 @@ def generate_youtube_description(caption: str, brand: str) -> str:
         return fallback
 
     try:
-        from google import genai
-        from google.genai import types
-
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model=settings.YOUTUBE_METADATA_AI_MODEL,
-            contents=(
-                f"Бренд: {brand}\n"
-                f"Підпис відео: {caption}\n"
-                "Поверни лише готовий текст опису українською."
-            ),
-            config=types.GenerateContentConfig(
-                system_instruction=(
-                    "Ти український e-commerce копірайтер бренду жіночого одягу. "
-                    "Напиши свіжий, природний, конкретний опис для YouTube у двох коротких абзацах. "
-                    "Не повторюй шаблони, не використовуй штучно-пафосний тон і не згадуй AI. "
-                    "Не вигадуй матеріал, фасон, колір, розміри або інші характеристики, яких немає у підписі. "
-                    "Не пиши артикул, назву моделі, категорію розмірів, слово 'модель', хештеги, CTA, контакти чи URL. "
-                    "Не використовуй фрази 'для комфортних і стильних образів' або "
-                    "'У відео показані фактура тканини, посадка та деталі виробу'."
-                ),
-                temperature=0.9,
-                max_output_tokens=220,
-            ),
+        instructions = (
+            "Ти український e-commerce копірайтер бренду жіночого одягу. "
+            "Напиши свіжий, природний, конкретний опис для YouTube у двох коротких абзацах. "
+            "Не повторюй шаблони, не використовуй штучно-пафосний тон і не згадуй AI. "
+            "Не вигадуй матеріал, фасон, колір, розміри або інші характеристики, яких немає у підписі. "
+            "Не пиши артикул, назву моделі, категорію розмірів, слово 'модель', хештеги, CTA, контакти чи URL. "
+            "Не використовуй фрази 'для комфортних і стильних образів' або "
+            "'У відео показані фактура тканини, посадка та деталі виробу'."
         )
-        description = _clean_description(response.output_text)
+        request = {
+            "systemInstruction": {"parts": [{"text": instructions}]},
+            "contents": [{"parts": [{"text": (
+                f"Бренд: {brand}\nПідпис відео: {caption}\n"
+                "Поверни лише готовий текст опису українською."
+            )}]}],
+            "generationConfig": {"temperature": 0.9, "maxOutputTokens": 220},
+        }
+        for attempt in range(3):
+            response = httpx.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{settings.YOUTUBE_METADATA_AI_MODEL}:generateContent",
+                headers={"x-goog-api-key": settings.GEMINI_API_KEY},
+                json=request,
+                timeout=45.0,
+            )
+            if response.status_code not in {429, 500, 502, 503, 504} or attempt == 2:
+                break
+            time.sleep(attempt + 1)
+        response.raise_for_status()
+        payload = response.json()
+        text = str(
+            payload.get("candidates", [{}])[0]
+            .get("content", {})
+            .get("parts", [{}])[0]
+            .get("text", "")
+        )
+        description = _clean_description(text)
         if description:
             return description
         logger.warning("Gemini returned invalid YouTube description; using local fallback")
