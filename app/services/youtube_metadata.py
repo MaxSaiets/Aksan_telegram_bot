@@ -19,6 +19,7 @@ _PRODUCT_KEYWORDS = {
     "кардиган": ("жіночий кардиган", ["жіночий кардиган", "кардиган жіночий"]),
     "худі": ("жіноче худі", ["жіноче худі", "худі жіноче"]),
     "светр": ("жіночий светр", ["жіночий светр", "светр жіночий"]),
+    "лонгслів": ("жіночий лонгслів", ["жіночий лонгслів", "лонгслів жіночий"]),
 }
 
 
@@ -67,6 +68,9 @@ def _product_context(source_text: str) -> tuple[str, list[str], list[str]]:
     if "велюр" in lowered or "велор" in lowered:
         product_tags.extend(["велюровий костюм", "костюм з велюру", "велюр"])
         hashtags.append("#велюровийкостюм")
+    if "вельвет" in lowered:
+        product_tags.extend(["вельветовий костюм", "костюм з вельвету", "вельвет"])
+        hashtags.append("#вельветовийкостюм")
 
     hashtags.extend(["#українськийодяг", "#жіночамода", "#новинкиодягу"])
     return label, _unique(product_tags), _unique(hashtags)[:5]
@@ -95,6 +99,8 @@ def build_youtube_metadata(caption: str, additional_tags: list[str] | None = Non
 
     if "костюм" in lowered_source and "трійка" in lowered_source and "велюр" in lowered_source:
         lead = f"Велюровий костюм-трійка {brand} для комфортних і стильних образів."
+    elif "костюм" in lowered_source and "вельвет" in lowered_source:
+        lead = f"Вельветовий жіночий костюм {brand} для виразних і комфортних образів."
     elif "велюр" in lowered_source:
         lead = f"Велюровий {product_label} {brand}: м'яка фактура та продумані деталі."
     else:

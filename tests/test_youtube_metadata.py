@@ -40,3 +40,16 @@ def test_metadata_uses_specific_product_copy_when_title_has_product_details(monk
     assert metadata.description.startswith("Велюровий костюм-трійка Aksan")
     assert "26.3067" not in metadata.description
     assert metadata.description.count("#") == 5
+
+
+def test_metadata_recognizes_long_sleeve_and_corduroy_costume(monkeypatch):
+    monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "")
+    monkeypatch.setattr(settings, "YOUTUBE_EXTRA_TAGS", "")
+
+    long_sleeve = build_youtube_metadata("26.3065_Aksan_лонгслів_норма_віскоза")
+    corduroy = build_youtube_metadata("26.3051_Aksan_костюм_норма_вельвет")
+
+    assert long_sleeve.description.startswith("Жіночий лонгслів від Aksan")
+    assert "жіночий лонгслів" in long_sleeve.tags
+    assert corduroy.description.startswith("Вельветовий жіночий костюм Aksan")
+    assert "вельветовий костюм" in corduroy.tags
