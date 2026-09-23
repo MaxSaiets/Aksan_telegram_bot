@@ -9,6 +9,8 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
     steps:
       - name: Deploy on server

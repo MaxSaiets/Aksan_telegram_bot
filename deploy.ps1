@@ -18,6 +18,38 @@ if (-not (Test-Path $pythonExe)) {
 
 Set-Location $projectRoot
 
+function Set-EnvFileValue {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return
+    }
+
+    $lines = if (Test-Path $Path) { [System.IO.File]::ReadAllLines($Path) } else { @() }
+    $prefix = "$Name="
+    $found = $false
+    $updated = foreach ($line in $lines) {
+        if ($line.StartsWith($prefix, [System.StringComparison]::Ordinal)) {
+            $found = $true
+            "$Name=$Value"
+        } else {
+            $line
+        }
+    }
+    if (-not $found) {
+        $updated += "$Name=$Value"
+    }
+
+    # Keep secrets out of logs and out of Git; .env is ignored by design.
+    [System.IO.File]::WriteAllLines($Path, [string[]]$updated, [System.Text.UTF8Encoding]::new($false))
+}
+
+Set-EnvFileValue -Path (Join-Path $projectRoot '.env') -Name 'GEMINI_API_KEY' -Value $env:GEMINI_API_KEY
+
 git config --system --add safe.directory $projectRoot
 git remote set-url origin https://github.com/MaxSaiets/Aksan_telegram_bot.git
 

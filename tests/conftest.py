@@ -22,8 +22,8 @@ def isolated_db(tmp_path, monkeypatch):
     Also mocks download_telegram_media so tests never hit the real Telegram API.
     """
     db_path = tmp_path / "test.db"
-    # Unit tests must never consume a real OpenAI API key from a developer .env.
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+    # Unit tests must never consume a real Gemini API key from a developer .env.
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
     monkeypatch.setattr("app.database.client._MOCK_DB_PATH", db_path)
 
     fresh_client = _MockDBClient()

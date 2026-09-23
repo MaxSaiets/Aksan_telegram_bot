@@ -56,36 +56,41 @@ def _clean_description(text: str) -> str | None:
 
 
 def generate_youtube_description(caption: str, brand: str) -> str:
-    """Use OpenAI for fresh copy and fall back safely when it is not configured."""
+    """Use Gemini for fresh copy and fall back safely when it is not configured."""
     fallback = _fallback_description(caption)
-    if not settings.OPENAI_API_KEY or not settings.YOUTUBE_AI_METADATA_ENABLED:
+    if not settings.GEMINI_API_KEY or not settings.YOUTUBE_AI_METADATA_ENABLED:
         return fallback
 
     try:
-        from openai import OpenAI
+        from google import genai
+        from google.genai import types
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        response = client.responses.create(
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        response = client.models.generate_content(
             model=settings.YOUTUBE_METADATA_AI_MODEL,
-            instructions=(
-                "Ти український e-commerce копірайтер бренду жіночого одягу. "
-                "Напиши свіжий, природний, конкретний опис для YouTube у двох коротких абзацах. "
-                "Не повторюй шаблони, не використовуй штучно-пафосний тон і не згадуй AI. "
-                "Не вигадуй матеріал, фасон, колір, розміри або інші характеристики, яких немає у підписі. "
-                "Не пиши артикул, назву моделі, категорію розмірів, слово 'модель', хештеги, CTA, контакти чи URL. "
-                "Не використовуй фрази 'для комфортних і стильних образів' або "
-                "'У відео показані фактура тканини, посадка та деталі виробу'."
-            ),
-            input=(
+            contents=(
                 f"Бренд: {brand}\n"
                 f"Підпис відео: {caption}\n"
                 "Поверни лише готовий текст опису українською."
+            ),
+            config=types.GenerateContentConfig(
+                system_instruction=(
+                    "Ти український e-commerce копірайтер бренду жіночого одягу. "
+                    "Напиши свіжий, природний, конкретний опис для YouTube у двох коротких абзацах. "
+                    "Не повторюй шаблони, не використовуй штучно-пафосний тон і не згадуй AI. "
+                    "Не вигадуй матеріал, фасон, колір, розміри або інші характеристики, яких немає у підписі. "
+                    "Не пиши артикул, назву моделі, категорію розмірів, слово 'модель', хештеги, CTA, контакти чи URL. "
+                    "Не використовуй фрази 'для комфортних і стильних образів' або "
+                    "'У відео показані фактура тканини, посадка та деталі виробу'."
+                ),
+                temperature=0.9,
+                max_output_tokens=220,
             ),
         )
         description = _clean_description(response.output_text)
         if description:
             return description
-        logger.warning("OpenAI returned invalid YouTube description; using local fallback")
+        logger.warning("Gemini returned invalid YouTube description; using local fallback")
     except Exception:
-        logger.exception("OpenAI YouTube copy generation failed; using local fallback")
+        logger.exception("Gemini YouTube copy generation failed; using local fallback")
     return fallback

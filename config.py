@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     YOUTUBE_DEFAULT_LANGUAGE: str = Field(default="uk")
     YOUTUBE_TAG_TARGET_CHARACTERS: int = Field(default=490)
     YOUTUBE_AI_METADATA_ENABLED: bool = Field(default=True)
-    YOUTUBE_METADATA_AI_MODEL: str = Field(default="gpt-5.4-mini")
-    OPENAI_API_KEY: str = Field(default="")
+    YOUTUBE_METADATA_AI_MODEL: str = Field(default="gemini-3.8-flash")
+    GEMINI_API_KEY: str = Field(default="")
 
     # в”Ђв”Ђ Supabase в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     SUPABASE_URL: str = Field(default="https://mock.supabase.co")

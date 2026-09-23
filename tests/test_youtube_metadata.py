@@ -3,7 +3,7 @@ from app.services.youtube_metadata import build_youtube_metadata, tag_character_
 
 
 def _disable_ai(monkeypatch):
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
 
 
 def test_metadata_preserves_exact_title_and_uses_natural_seo_description(monkeypatch):
