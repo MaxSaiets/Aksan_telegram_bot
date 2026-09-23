@@ -52,7 +52,16 @@ def test_upload_reuses_scopes_saved_in_token(tmp_path, monkeypatch, temp_video):
     monkeypatch.setattr(googleapiclient.discovery, "build", lambda *args, **kwargs: youtube)
     monkeypatch.setattr(googleapiclient.http, "MediaFileUpload", lambda *args, **kwargs: object())
 
-    url = youtube_uploader.upload_to_youtube(temp_video, "26.3048_норма")
+    url = youtube_uploader.upload_to_youtube(
+        temp_video,
+        "26.3048_норма",
+        description="Опис моделі",
+        tags=["Aksan", "26.3048"],
+    )
 
     assert url == "https://www.youtube.com/watch?v=uploaded-video"
     assert requested_scopes == [None]
+    payload = youtube.videos().insert.call_args.kwargs["body"]
+    assert payload["snippet"]["description"] == "Опис моделі"
+    assert payload["snippet"]["tags"] == ["Aksan", "26.3048"]
+    assert payload["snippet"]["defaultLanguage"] == settings.YOUTUBE_DEFAULT_LANGUAGE

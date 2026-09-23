@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # в”Ђв”Ђ YouTube в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     YOUTUBE_CHANNEL_ID: str = Field(default="MOCK_CHANNEL_ID")
     YOUTUBE_CLIENT_SECRETS_FILE: str = Field(default="client_secrets.json")
+    YOUTUBE_BRAND_NAME: str = Field(default="Aksan")
+    YOUTUBE_DESCRIPTION_FOOTER: str = Field(default="")
+    YOUTUBE_EXTRA_TAGS: str = Field(default="")
+    YOUTUBE_DEFAULT_LANGUAGE: str = Field(default="uk")
 
     # в”Ђв”Ђ Supabase в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     SUPABASE_URL: str = Field(default="https://mock.supabase.co")

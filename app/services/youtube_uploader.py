@@ -122,6 +122,7 @@ def upload_to_youtube(
     video_path: Path,
     title: str,
     description: str = "",
+    tags: list[str] | None = None,
     on_progress=None,
 ) -> str:
     """
@@ -167,9 +168,12 @@ def upload_to_youtube(
             "title": title,
             "description": description,
             "categoryId": "22",
+            "defaultLanguage": settings.YOUTUBE_DEFAULT_LANGUAGE,
         },
         "status": {"privacyStatus": "public"},
     }
+    if tags:
+        request_body["snippet"]["tags"] = tags
 
     media = MediaFileUpload(str(video_path), chunksize=8 * 1024 * 1024, resumable=True)
     request = youtube.videos().insert(

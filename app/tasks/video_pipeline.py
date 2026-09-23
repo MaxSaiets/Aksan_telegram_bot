@@ -18,6 +18,7 @@ from app.database.videos_repo import (
 )
 from app.services.telegram_sender import broadcast_to_group, send_text
 from app.services.video_editor import overlay_text
+from app.services.youtube_metadata import build_youtube_metadata
 from app.services.youtube_uploader import upload_to_youtube
 from app.tasks.celery_app import celery_app
 from app.telegram.keyboard import main_menu_keyboard
@@ -155,10 +156,12 @@ def run_video_pipeline(self, chat_id: str, file_id: str, caption: str, message_i
             return {"status": "cancelled", "video_id": video_id}
 
         _status(chat_id, 2, total_steps, "Завантажую на YouTube...")
+        youtube_metadata = build_youtube_metadata(caption)
         youtube_url = upload_to_youtube(
             local_path,
-            title=caption or "Відео без підпису",
-            description="",
+            title=youtube_metadata.title,
+            description=youtube_metadata.description,
+            tags=youtube_metadata.tags,
         )
         logger.info("YouTube URL: %s", youtube_url)
 
