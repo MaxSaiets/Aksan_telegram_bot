@@ -89,11 +89,20 @@ def build_youtube_metadata(caption: str, additional_tags: list[str] | None = Non
     title = (caption or "").strip()
     brand = settings.YOUTUBE_BRAND_NAME.strip() or "Aksan"
     existing_tags = _unique(additional_tags or [])
-    product_label, product_tags, hashtags = _product_context(" ".join([title, *existing_tags]))
+    source_text = " ".join([title, *existing_tags])
+    product_label, product_tags, hashtags = _product_context(source_text)
+    lowered_source = source_text.casefold()
+
+    if "костюм" in lowered_source and "трійка" in lowered_source and "велюр" in lowered_source:
+        lead = f"Велюровий костюм-трійка {brand} для комфортних і стильних образів."
+    elif "велюр" in lowered_source:
+        lead = f"Велюровий {product_label} {brand}: м'яка фактура та продумані деталі."
+    else:
+        lead = f"{product_label.capitalize()} від {brand} для комфортних і стильних образів."
 
     description_lines = [
-        f"{product_label.capitalize()} від {brand}: фактура, крій і деталі виробу у відеоогляді.",
-        f"Новинки жіночого одягу {brand} для ваших повсякденних та особливих образів.",
+        lead,
+        "У відео - фактура тканини, посадка та деталі виробу.",
         " ".join(hashtags),
     ]
 

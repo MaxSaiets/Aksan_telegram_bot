@@ -29,3 +29,14 @@ def test_metadata_appends_configured_footer_and_tags(monkeypatch):
     assert metadata.description.endswith("Замовлення: example.com")
     assert "мода Україна" in metadata.tags
     assert "Aksan fashion" in metadata.tags
+
+
+def test_metadata_uses_specific_product_copy_when_title_has_product_details(monkeypatch):
+    monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "")
+    monkeypatch.setattr(settings, "YOUTUBE_EXTRA_TAGS", "")
+
+    metadata = build_youtube_metadata("26.3067_Aksan_костюм_норма_трійка_велюр")
+
+    assert metadata.description.startswith("Велюровий костюм-трійка Aksan")
+    assert "26.3067" not in metadata.description
+    assert metadata.description.count("#") == 5
