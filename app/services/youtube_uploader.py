@@ -183,6 +183,13 @@ def update_existing_videos_metadata(video_ids: list[str]) -> list[YouTubeMetadat
     for video_id in video_ids:
         snippet = snippets[video_id]
         metadata = _metadata_for_snippet(video_id, snippet)
+        if (
+            snippet.get("description", "") == metadata.description
+            and list(snippet.get("tags") or []) == metadata.tags
+        ):
+            logger.info("YouTube metadata already current: video_id=%s", video_id)
+            results.append(metadata)
+            continue
         updated_snippet = {
             "title": metadata.title,
             "description": metadata.description,

@@ -154,3 +154,34 @@ def test_update_existing_video_metadata_preserves_title_and_category(tmp_path, m
     assert payload["snippet"]["description"].count("#") == 5
     assert "жіночий костюм" in payload["snippet"]["tags"]
     assert "старий тег" in payload["snippet"]["tags"]
+
+
+def test_bulk_metadata_update_skips_videos_that_are_already_current(monkeypatch):
+    import app.services.youtube_uploader as youtube_uploader
+    from app.services.youtube_metadata import build_youtube_metadata
+
+    title = "26.3057_Aksan_штани_норма_байка"
+    current = build_youtube_metadata(title)
+    youtube = MagicMock()
+    youtube.videos().list.return_value.execute.return_value = {
+        "items": [
+            {"id": "current", "snippet": {
+                "title": title,
+                "description": current.description,
+                "tags": current.tags,
+                "categoryId": "22",
+            }},
+            {"id": "stale", "snippet": {
+                "title": title,
+                "description": "старий опис",
+                "tags": [],
+                "categoryId": "22",
+            }},
+        ],
+    }
+    monkeypatch.setattr(youtube_uploader, "_authorized_youtube_service", lambda: youtube)
+
+    youtube_uploader.update_existing_videos_metadata(["current", "stale"])
+
+    assert youtube.videos().update.call_count == 1
+    assert youtube.videos().update.call_args.kwargs["body"]["id"] == "stale"
