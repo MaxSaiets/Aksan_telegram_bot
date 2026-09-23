@@ -366,7 +366,8 @@ async def btn_send_video(message: Message, state: FSMContext) -> None:
         "Після останнього ролика:\n"
         "• надішліть `готово`, якщо кожен ролик уже має підпис; або\n"
         "• надішліть назви по одній на рядок у тому самому порядку, що й відео.\n\n"
-        "Я завантажу їх приватно та запланую публікації на YouTube у денні години.",
+        "Я завантажу їх приватно та запланую публікації на YouTube за київським часом. "
+        "До трьох роликів на день, з інтервалом щонайменше п'ять годин.",
         parse_mode="Markdown",
     )
 
@@ -471,7 +472,8 @@ async def handle_video_batch_titles(message: Message, state: FSMContext) -> None
     await message.answer(
         f"✅ Заплановано {len(items)} відео для YouTube.\n\n"
         + "\n".join(preview_lines)
-        + "\n\nРолики завантажаться приватно, а YouTube опублікує їх у цей час.",
+        + "\n\nРолики завантажаться приватно, а YouTube опублікує їх у цей час "
+        "за Києвом.",
         reply_markup=main_menu_keyboard(),
     )
 

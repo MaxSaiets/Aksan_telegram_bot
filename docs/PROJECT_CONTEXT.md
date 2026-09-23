@@ -35,6 +35,12 @@ User flow:
 5. original video goes to YouTube
 6. overlay video goes to target Telegram group
 
+For a batch, the operator sends `готово` after all videos (or a title list for
+videos without captions). Videos are uploaded privately, then YouTube publishes
+them at randomly selected Kyiv-time windows: `08:30–09:30`, `14:30–15:30`, and
+`20:30–21:30`. The scheduler keeps a minimum five-hour same-day gap and a
+maximum of three publications per day.
+
 Task file:
 - [app/tasks/video_pipeline.py](H:\AKSAN\telegram_aksan_bot\_publish\app\tasks\video_pipeline.py)
 

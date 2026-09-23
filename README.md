@@ -39,6 +39,8 @@ The bot supports four main workflows:
 ### Video handling
 - video caption is required
 - if a user sends a video without caption, bot replies: `Напишіть назву.`
+- videos can be sent as a batch; send `готово` after the last one, or provide missing titles one per line
+- batch videos upload to YouTube as private and publish at random Kyiv-time slots: `08:30–09:30`, `14:30–15:30`, and `20:30–21:30`; no more than three per day and at least five hours apart
 - during video upload the bot no longer searches the catalog and no longer uses fuzzy matching
 - catalog-style matching is deferred to file generation
 

@@ -7,11 +7,12 @@ from zoneinfo import ZoneInfo
 
 
 KYIV = ZoneInfo("Europe/Kyiv")
-# Three windows preserve a minimum five-hour gap without publishing at night.
+# Three broad windows preserve a minimum five-hour gap without publishing at night.
+# The hour-wide ranges prevent a repetitive, clockwork-looking upload pattern.
 _DAILY_WINDOWS = (
-    (time(9, 0), time(9, 30)),
-    (time(14, 30), time(15, 0)),
-    (time(20, 0), time(20, 30)),
+    (time(8, 30), time(9, 30)),
+    (time(14, 30), time(15, 30)),
+    (time(20, 30), time(21, 30)),
 )
 
 
