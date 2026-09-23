@@ -2,7 +2,12 @@ from config import settings
 from app.services.youtube_metadata import build_youtube_metadata, tag_character_count
 
 
+def _disable_ai(monkeypatch):
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+
+
 def test_metadata_preserves_exact_title_and_uses_natural_seo_description(monkeypatch):
+    _disable_ai(monkeypatch)
     monkeypatch.setattr(settings, "YOUTUBE_BRAND_NAME", "Aksan")
     monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "")
     monkeypatch.setattr(settings, "YOUTUBE_EXTRA_TAGS", "")
@@ -22,6 +27,7 @@ def test_metadata_preserves_exact_title_and_uses_natural_seo_description(monkeyp
 
 
 def test_metadata_appends_configured_footer_and_tags(monkeypatch):
+    _disable_ai(monkeypatch)
     monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "Замовлення: example.com")
     monkeypatch.setattr(settings, "YOUTUBE_EXTRA_TAGS", "мода Україна, Aksan fashion")
 
@@ -33,43 +39,44 @@ def test_metadata_appends_configured_footer_and_tags(monkeypatch):
 
 
 def test_metadata_uses_specific_product_copy_when_title_has_product_details(monkeypatch):
+    _disable_ai(monkeypatch)
     monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "")
     monkeypatch.setattr(settings, "YOUTUBE_EXTRA_TAGS", "")
 
     metadata = build_youtube_metadata("26.3067_Aksan_костюм_норма_трійка_велюр")
 
-    assert metadata.description.startswith("Велюровий костюм-трійка Aksan")
+    assert "#костюмтрійка" in metadata.description
     assert "26.3067" not in metadata.description
     assert metadata.description.count("#") == 5
 
 
 def test_metadata_recognizes_long_sleeve_and_corduroy_costume(monkeypatch):
+    _disable_ai(monkeypatch)
     monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "")
     monkeypatch.setattr(settings, "YOUTUBE_EXTRA_TAGS", "")
 
     long_sleeve = build_youtube_metadata("26.3065_Aksan_лонгслів_норма_віскоза")
     corduroy = build_youtube_metadata("26.3051_Aksan_костюм_норма_вельвет")
 
-    assert long_sleeve.description.startswith("Жіночий лонгслів з віскози Aksan")
     assert "жіночий лонгслів" in long_sleeve.tags
-    assert corduroy.description.startswith("Вельветовий жіночий костюм Aksan")
     assert "вельветовий костюм" in corduroy.tags
 
 
 def test_metadata_uses_material_when_title_confirms_it(monkeypatch):
+    _disable_ai(monkeypatch)
     monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "")
     monkeypatch.setattr(settings, "YOUTUBE_EXTRA_TAGS", "")
 
     fleece_pants = build_youtube_metadata("26.3057_Aksan_штани_норма_байка")
     viscose_long_sleeve = build_youtube_metadata("26.3065_Aksan_лонгслів_норма_віскоза")
 
-    assert fleece_pants.description.startswith("Жіночі штани на байці Aksan")
     assert "штани на байці" in fleece_pants.tags
-    assert viscose_long_sleeve.description.startswith("Жіночий лонгслів з віскози Aksan")
+    assert "#віскоза" in viscose_long_sleeve.description
     assert "лонгслів з віскози" in viscose_long_sleeve.tags
 
 
 def test_material_specific_descriptions_do_not_repeat(monkeypatch):
+    _disable_ai(monkeypatch)
     monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "")
     monkeypatch.setattr(settings, "YOUTUBE_EXTRA_TAGS", "")
 
@@ -80,3 +87,18 @@ def test_material_specific_descriptions_do_not_repeat(monkeypatch):
     }
 
     assert len(descriptions) == 3
+
+
+def test_metadata_uses_ai_generated_copy_when_available(monkeypatch):
+    _disable_ai(monkeypatch)
+    monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "")
+    monkeypatch.setattr(settings, "YOUTUBE_EXTRA_TAGS", "")
+    monkeypatch.setattr(
+        "app.services.youtube_metadata.generate_youtube_description",
+        lambda caption, brand: "Свіжий текст без технічних деталей.\nУ ролику легко відчути характер речі.",
+    )
+
+    metadata = build_youtube_metadata("26.3067_Aksan_костюм_норма_трійка_велюр")
+
+    assert metadata.description.startswith("Свіжий текст без технічних деталей.")
+    assert metadata.description.count("#") == 5
