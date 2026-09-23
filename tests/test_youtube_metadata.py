@@ -66,3 +66,16 @@ def test_metadata_uses_material_when_title_confirms_it(monkeypatch):
     assert "штани на байці" in fleece_pants.tags
     assert viscose_long_sleeve.description.startswith("Жіночий лонгслів з віскози Aksan")
     assert "лонгслів з віскози" in viscose_long_sleeve.tags
+
+
+def test_material_specific_descriptions_do_not_repeat(monkeypatch):
+    monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "")
+    monkeypatch.setattr(settings, "YOUTUBE_EXTRA_TAGS", "")
+
+    descriptions = {
+        build_youtube_metadata("26.3057_Aksan_штани_норма_байка").description,
+        build_youtube_metadata("26.3065_Aksan_лонгслів_норма_віскоза").description,
+        build_youtube_metadata("26.3051_Aksan_костюм_норма_вельвет").description,
+    }
+
+    assert len(descriptions) == 3

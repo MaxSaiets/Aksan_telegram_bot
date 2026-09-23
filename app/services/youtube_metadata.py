@@ -105,20 +105,26 @@ def build_youtube_metadata(caption: str, additional_tags: list[str] | None = Non
 
     if "костюм" in lowered_source and "трійка" in lowered_source and "велюр" in lowered_source:
         lead = f"Велюровий костюм-трійка {brand} для комфортних і стильних образів."
+        details = "Велюрова фактура додає образу виразності, а комплект легко стилізувати на щодень."
     elif "костюм" in lowered_source and "вельвет" in lowered_source:
         lead = f"Вельветовий жіночий костюм {brand} для виразних і комфортних образів."
+        details = "Вельвет додає фактури, а комплект легко стилізувати для роботи, прогулянок і зустрічей."
     elif "штани" in lowered_source and "байка" in lowered_source:
         lead = f"Жіночі штани на байці {brand} для теплих і комфортних образів."
+        details = "Байкова тканина додає затишку, а лаконічний крій легко поєднувати з базовим гардеробом."
     elif "лонгслів" in lowered_source and "віскоза" in lowered_source:
         lead = f"Жіночий лонгслів з віскози {brand} для легких і комфортних образів."
+        details = "М'яка віскоза комфортна для щоденного носіння, а універсальний фасон пасує до багатошарових образів."
     elif "велюр" in lowered_source:
         lead = f"Велюровий {product_label} {brand}: м'яка фактура та продумані деталі."
+        details = "У відео показані фактура тканини, посадка та деталі виробу."
     else:
         lead = f"{product_label.capitalize()} від {brand} для комфортних і стильних образів."
+        details = "У відео показані фактура тканини, посадка та деталі виробу."
 
     description_lines = [
         lead,
-        "У відео - фактура тканини, посадка та деталі виробу.",
+        details,
         " ".join(hashtags),
     ]
 
