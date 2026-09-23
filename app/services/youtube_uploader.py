@@ -16,10 +16,6 @@ logger = get_logger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-YOUTUBE_UPLOAD_SCOPES = [
-    "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube.readonly",
-]
 YOUTUBE_DELETE_SCOPES = [
     "https://www.googleapis.com/auth/youtube",
 ]
@@ -106,10 +102,9 @@ def delete_from_youtube(youtube_url: str) -> bool:
         from google.auth.transport.requests import Request
         from googleapiclient.discovery import build
 
-        creds = google.oauth2.credentials.Credentials.from_authorized_user_info(
-            creds_data,
-            YOUTUBE_AUTH_SCOPES,
-        )
+        # Reuse the exact grant saved by OAuth. Passing a narrower scope list
+        # during refresh can make Google's token endpoint reject it as invalid_scope.
+        creds = google.oauth2.credentials.Credentials.from_authorized_user_info(creds_data)
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
             token_file.write_text(creds.to_json(), encoding="utf-8")
@@ -155,10 +150,9 @@ def upload_to_youtube(
 
     if token_file.exists():
         creds_data = _load_token_data(token_file)
-        creds = google.oauth2.credentials.Credentials.from_authorized_user_info(
-            creds_data,
-            YOUTUBE_UPLOAD_SCOPES,
-        )
+        # Keep the original OAuth grant intact for refreshes. The token already
+        # carries every scope needed for upload, delete, and channel reads.
+        creds = google.oauth2.credentials.Credentials.from_authorized_user_info(creds_data)
     else:
         from google_auth_oauthlib.flow import InstalledAppFlow
 
