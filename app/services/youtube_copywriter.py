@@ -48,6 +48,13 @@ class YouTubeCopyGenerationError(RuntimeError):
     """Raised when a strict batch must not fall back to local copy."""
 
 
+def _thinking_config(model: str) -> dict[str, int | str]:
+    """Use the thinking control supported by the configured Gemini model family."""
+    if model.startswith("gemini-2.5-"):
+        return {"thinkingBudget": 0}
+    return {"thinkingLevel": "minimal"}
+
+
 def _fallback_description(seed: str) -> str:
     """Return a deterministic distinct fallback when AI is unavailable."""
     digest = hashlib.sha256(seed.encode("utf-8")).digest()
@@ -95,9 +102,9 @@ def generate_youtube_description(caption: str, brand: str, require_ai: bool = Fa
                 "Не виводь внутрішній ключ у тексті.\n"
                 "Поверни лише готовий текст опису українською."
             )}]}],
-            # Copywriting is simple; minimal thinking preserves tokens for the actual text.
+            # Copywriting is simple; disable/minimize thinking for the selected model family.
             "generationConfig": {
-                "thinkingConfig": {"thinkingLevel": "minimal"},
+                "thinkingConfig": _thinking_config(settings.YOUTUBE_METADATA_AI_MODEL),
                 "maxOutputTokens": 500,
             },
         }

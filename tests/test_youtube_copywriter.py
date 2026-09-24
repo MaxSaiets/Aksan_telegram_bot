@@ -46,6 +46,32 @@ def test_copywriter_uses_gemini_when_configured(monkeypatch):
     )
 
 
+def test_copywriter_uses_zero_thinking_budget_for_gemini_25(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"candidates": [{"content": {"parts": [{"text": (
+                "Живий опис для нового відео з акцентом на те, що справді вказано у підписі. "
+                "Короткий огляд допомагає побачити виріб ближче без зайвих рекламних обіцянок."
+            )}]}}]}
+
+    request_data = {}
+    monkeypatch.setattr(
+        "app.services.youtube_copywriter.httpx.post",
+        lambda url, **kwargs: request_data.update(kwargs["json"]) or FakeResponse(),
+    )
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "key")
+    monkeypatch.setattr(settings, "YOUTUBE_METADATA_AI_MODEL", "gemini-2.5-flash")
+
+    generate_youtube_description("26.3065_Aksan_лонгслів", "Aksan")
+
+    assert request_data["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}
+
+
 def test_strict_copywriter_never_uses_fallback(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
 
