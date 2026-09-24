@@ -12,7 +12,8 @@ from config import settings
 
 
 logger = logging.getLogger(__name__)
-_SKU_PATTERN = re.compile(r"\b\d{2}\.\d{3,5}\b")
+_SKU_PATTERN = re.compile(r"(?<!\d)\d{2}\.\d{3,5}(?!\d)")
+_SIZE_CATEGORY_TOKENS = {"норма", "бот", "ботал", "супер", "суперботал"}
 _BANNED_PHRASES = (
     "для комфортних і стильних образів",
     "у відео показані фактура тканини, посадка та деталі виробу",
@@ -55,6 +56,18 @@ def _thinking_config(model: str) -> dict[str, int | str]:
     return {"thinkingLevel": "minimal"}
 
 
+def _safe_product_context(caption: str, brand: str) -> str:
+    """Keep useful product words while withholding forbidden title metadata from Gemini."""
+    without_sku = _SKU_PATTERN.sub("", caption or "")
+    brand_tokens = {token.casefold() for token in re.split(r"[\s_]+", brand) if token}
+    tokens = [
+        token
+        for token in re.split(r"[\s_]+", without_sku)
+        if token and token.casefold() not in brand_tokens and token.casefold() not in _SIZE_CATEGORY_TOKENS
+    ]
+    return " ".join(tokens) or "жіночий одяг"
+
+
 def _fallback_description(seed: str) -> str:
     """Return a deterministic distinct fallback when AI is unavailable."""
     digest = hashlib.sha256(seed.encode("utf-8")).digest()
@@ -94,10 +107,11 @@ def generate_youtube_description(caption: str, brand: str, require_ai: bool = Fa
             "Не використовуй фрази 'для комфортних і стильних образів' або "
             "'У відео показані фактура тканини, посадка та деталі виробу'."
         )
+        product_context = _safe_product_context(caption, brand)
         request = {
             "systemInstruction": {"parts": [{"text": instructions}]},
             "contents": [{"parts": [{"text": (
-                f"Бренд: {brand}\nПідпис відео: {caption}\n"
+                f"Бренд: {brand}\nКонтекст виробу: {product_context}\n"
                 f"Внутрішній ключ різноманітності: {hashlib.sha256(caption.encode('utf-8')).hexdigest()[:12]}\n"
                 "Не виводь внутрішній ключ у тексті.\n"
                 "Поверни лише готовий текст опису українською."
