@@ -50,20 +50,19 @@ function Set-EnvFileValue {
 
 Set-EnvFileValue -Path (Join-Path $projectRoot '.env') -Name 'GEMINI_API_KEY' -Value $env:GEMINI_API_KEY
 
-git config --system --add safe.directory $projectRoot
-git remote set-url origin https://github.com/MaxSaiets/Aksan_telegram_bot.git
+& git -c "safe.directory=$projectRoot" remote set-url origin https://github.com/MaxSaiets/Aksan_telegram_bot.git
 
-git fetch origin
+& git -c "safe.directory=$projectRoot" fetch origin
 if ($LASTEXITCODE -ne 0) {
     throw 'git fetch failed'
 }
 
-git reset --hard origin/main
+& git -c "safe.directory=$projectRoot" reset --hard origin/main
 if ($LASTEXITCODE -ne 0) {
     throw 'git reset failed'
 }
 
-$shortSha = (& git rev-parse --short HEAD).Trim()
+$shortSha = (& git -c "safe.directory=$projectRoot" rev-parse --short HEAD).Trim()
 
 & $pythonExe -m pip install --upgrade pip
 & $pythonExe -m pip install -r requirements.txt
