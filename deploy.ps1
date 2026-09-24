@@ -57,7 +57,12 @@ function Set-EnvFileValue {
     [System.IO.File]::WriteAllLines($Path, [string[]]$updated, [System.Text.UTF8Encoding]::new($false))
 }
 
-Set-EnvFileValue -Path (Join-Path $projectRoot '.env') -Name 'GEMINI_API_KEY' -Value $env:GEMINI_API_KEY
+try {
+    Set-EnvFileValue -Path (Join-Path $projectRoot '.env') -Name 'GEMINI_API_KEY' -Value $env:GEMINI_API_KEY
+} catch {
+    # Deployment must still recover the bot when the runner cannot edit the protected .env file.
+    Write-Warning "Could not update GEMINI_API_KEY in .env; keeping the server value unchanged."
+}
 
 Invoke-CheckedCommand -Name 'git remote configuration' -Command {
     & git -c "safe.directory=$projectRoot" remote set-url origin https://github.com/MaxSaiets/Aksan_telegram_bot.git
