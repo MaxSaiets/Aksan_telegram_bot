@@ -109,7 +109,9 @@ def generate_youtube_description(caption: str, brand: str, require_ai: bool = Fa
                 json=request,
                 timeout=45.0,
             )
-            if response.status_code not in {429, 500, 502, 503, 504} or attempt == 2:
+            # A 429 consumes no useful retry budget: Gemini reports quota exhaustion,
+            # so defer the strict batch instead of making two more identical requests.
+            if response.status_code not in {500, 502, 503, 504} or attempt == 2:
                 break
             time.sleep(attempt + 1)
         response.raise_for_status()

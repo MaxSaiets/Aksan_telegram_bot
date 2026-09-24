@@ -1,5 +1,6 @@
 from config import settings
 from app.services.youtube_copywriter import generate_youtube_description
+import httpx
 import pytest
 from app.services.youtube_copywriter import YouTubeCopyGenerationError
 
@@ -50,3 +51,20 @@ def test_strict_copywriter_never_uses_fallback(monkeypatch):
 
     with pytest.raises(YouTubeCopyGenerationError):
         generate_youtube_description("26.3065_Aksan_лонгслів", "Aksan", require_ai=True)
+
+
+def test_strict_copywriter_does_not_retry_quota_exhaustion(monkeypatch):
+    class QuotaResponse:
+        status_code = 429
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("quota exhausted", request=None, response=None)
+
+    calls = []
+    monkeypatch.setattr("app.services.youtube_copywriter.httpx.post", lambda *args, **kwargs: calls.append(1) or QuotaResponse())
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "key")
+
+    with pytest.raises(YouTubeCopyGenerationError):
+        generate_youtube_description("26.3065_Aksan_лонгслів", "Aksan", require_ai=True)
+
+    assert calls == [1]
