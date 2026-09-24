@@ -136,12 +136,8 @@ def generate_youtube_description(caption: str, brand: str, require_ai: bool = Fa
             if response.status_code not in {500, 502, 503, 504} or attempt == 2:
                 response.raise_for_status()
                 payload = response.json()
-                text = str(
-                    payload.get("candidates", [{}])[0]
-                    .get("content", {})
-                    .get("parts", [{}])[0]
-                    .get("text", "")
-                )
+                parts = payload.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                text = "".join(str(part.get("text", "")) for part in parts)
                 description = _clean_description(text)
                 if description:
                     return description

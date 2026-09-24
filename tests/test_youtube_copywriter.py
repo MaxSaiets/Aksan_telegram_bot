@@ -123,6 +123,28 @@ def test_copywriter_normalizes_generic_model_word_in_generated_copy(monkeypatch)
     assert "виріб" in description
 
 
+def test_copywriter_combines_all_gemini_text_parts(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"candidates": [{"content": {"parts": [
+                {"text": "Живий опис для нового відео з акцентом на те, що справді вказано у підписі. "},
+                {"text": "Короткий огляд допомагає побачити виріб ближче без зайвих рекламних обіцянок."},
+            ]}}]}
+
+    monkeypatch.setattr("app.services.youtube_copywriter.httpx.post", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "key")
+
+    description = generate_youtube_description("26.3065_Aksan_лонгслів", "Aksan", require_ai=True)
+
+    assert description.startswith("Живий опис")
+    assert description.endswith("рекламних обіцянок.")
+
+
 def test_strict_copywriter_retries_invalid_generated_text(monkeypatch):
     class FakeResponse:
         status_code = 200
