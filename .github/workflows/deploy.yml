@@ -13,7 +13,7 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
     steps:
-      - name: Deploy on server
+      - name: Bootstrap deploy script
         shell: powershell
         run: |
           $projectRoot = 'C:\bots\telegram_aksan_bot'
@@ -22,5 +22,26 @@ jobs:
             throw "Project root not found: $projectRoot"
           }
 
+          Set-Location $projectRoot
+
+          & git -c "safe.directory=$projectRoot" remote set-url origin https://github.com/MaxSaiets/Aksan_telegram_bot.git
+          if ($LASTEXITCODE -ne 0) {
+            throw 'git remote configuration failed'
+          }
+
+          & git -c "safe.directory=$projectRoot" fetch origin
+          if ($LASTEXITCODE -ne 0) {
+            throw 'git fetch failed'
+          }
+
+          & git -c "safe.directory=$projectRoot" reset --hard origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw 'git reset failed'
+          }
+
+      - name: Deploy on server
+        shell: powershell
+        run: |
+          $projectRoot = 'C:\bots\telegram_aksan_bot'
           Set-Location $projectRoot
           .\deploy.ps1
