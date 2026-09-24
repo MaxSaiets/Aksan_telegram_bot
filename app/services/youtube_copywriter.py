@@ -50,10 +50,12 @@ class YouTubeCopyGenerationError(RuntimeError):
     """Raised when a strict batch must not fall back to local copy."""
 
 
-def _thinking_config(model: str) -> dict[str, int | str]:
+def _thinking_config(model: str) -> dict[str, int | str] | None:
     """Use the thinking control supported by the configured Gemini model family."""
     if model.startswith("gemini-2.5-"):
         return {"thinkingBudget": 0}
+    if model.startswith("gemini-3.1-") or model.startswith("gemini-omni-"):
+        return None
     return {"thinkingLevel": "minimal"}
 
 
@@ -120,6 +122,10 @@ def generate_youtube_description(caption: str, brand: str, require_ai: bool = Fa
         for model in _candidate_models():
             if model in _EXHAUSTED_MODELS:
                 continue
+            generation_config: dict[str, object] = {"maxOutputTokens": 500}
+            thinking_config = _thinking_config(model)
+            if thinking_config is not None:
+                generation_config["thinkingConfig"] = thinking_config
             request = {
                 "systemInstruction": {"parts": [{"text": instructions}]},
                 "contents": [{"parts": [{"text": (
@@ -128,10 +134,7 @@ def generate_youtube_description(caption: str, brand: str, require_ai: bool = Fa
                     "Не виводь внутрішній ключ у тексті.\n"
                     "Поверни лише готовий текст опису українською."
                 )}]}],
-                "generationConfig": {
-                    "thinkingConfig": _thinking_config(model),
-                    "maxOutputTokens": 500,
-                },
+                "generationConfig": generation_config,
             }
             for attempt in range(3):
                 response = httpx.post(
