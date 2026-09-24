@@ -156,9 +156,12 @@ def generate_youtube_description(caption: str, brand: str, require_ai: bool = Fa
         logger.warning("Gemini returned invalid YouTube description; using local fallback")
     except Exception as exc:
         if require_ai:
-            logger.warning("Gemini YouTube copy generation failed during strict metadata generation")
+            detail = ""
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+                detail = f" (HTTP {exc.response.status_code})"
+            logger.warning("Gemini YouTube copy generation failed during strict metadata generation%s", detail)
             if isinstance(exc, YouTubeCopyGenerationError):
                 raise
-            raise YouTubeCopyGenerationError("Gemini did not return a valid YouTube description") from None
+            raise YouTubeCopyGenerationError(f"Gemini did not return a valid YouTube description{detail}") from None
         logger.exception("Gemini YouTube copy generation failed; using local fallback")
     return fallback
