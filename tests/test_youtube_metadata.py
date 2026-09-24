@@ -102,3 +102,17 @@ def test_metadata_uses_ai_generated_copy_when_available(monkeypatch):
 
     assert metadata.description.startswith("Свіжий текст без технічних деталей.")
     assert metadata.description.count("#") == 5
+
+
+def test_metadata_requires_ai_when_strict_mode_is_requested(monkeypatch):
+    _disable_ai(monkeypatch)
+    called_with = []
+    monkeypatch.setattr(settings, "YOUTUBE_DESCRIPTION_FOOTER", "")
+    monkeypatch.setattr(
+        "app.services.youtube_metadata.generate_youtube_description",
+        lambda caption, brand, require_ai=False: called_with.append(require_ai) or "Живий опис без технічних деталей. У відео показано виріб ближче без зайвих обіцянок.",
+    )
+
+    build_youtube_metadata("26.3067_Aksan_костюм_норма_трійка_велюр", require_ai=True)
+
+    assert called_with == [True]

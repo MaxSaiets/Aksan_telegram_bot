@@ -127,7 +127,11 @@ def _within_tag_budget(tags: list[str]) -> list[str]:
     return result
 
 
-def build_youtube_metadata(caption: str, additional_tags: list[str] | None = None) -> YouTubeMetadata:
+def build_youtube_metadata(
+    caption: str,
+    additional_tags: list[str] | None = None,
+    require_ai: bool = False,
+) -> YouTubeMetadata:
     """Create description and tags while keeping the supplied title unchanged."""
     title = (caption or "").strip()
     brand = settings.YOUTUBE_BRAND_NAME.strip() or "Aksan"
@@ -135,7 +139,10 @@ def build_youtube_metadata(caption: str, additional_tags: list[str] | None = Non
     source_text = " ".join([title, *existing_tags])
     _, product_tags, hashtags = _product_context(source_text)
 
-    description = generate_youtube_description(title, brand)
+    if require_ai:
+        description = generate_youtube_description(title, brand, require_ai=True)
+    else:
+        description = generate_youtube_description(title, brand)
 
     description_lines = [
         description,

@@ -126,11 +126,19 @@ def _existing_video_snippets(youtube, video_ids: list[str]) -> dict[str, dict]:
     return snippets
 
 
-def _metadata_for_snippet(video_id: str, snippet: dict) -> YouTubeMetadataUpdate:
+def _metadata_for_snippet(
+    video_id: str,
+    snippet: dict,
+    require_ai: bool = False,
+) -> YouTubeMetadataUpdate:
     title = str(snippet.get("title") or "").strip()
     if not title:
         raise ValueError(f"YouTube video has no title: {video_id}")
-    metadata = build_youtube_metadata(title, list(snippet.get("tags") or []))
+    metadata = build_youtube_metadata(
+        title,
+        list(snippet.get("tags") or []),
+        require_ai=require_ai,
+    )
     return YouTubeMetadataUpdate(
         video_id=video_id,
         title=title,
@@ -152,11 +160,14 @@ def prepare_existing_videos_metadata(video_ids: list[str]) -> list[YouTubeMetada
     return [_metadata_for_snippet(video_id, snippets[video_id]) for video_id in video_ids]
 
 
-def update_existing_video_metadata(video_id: str) -> YouTubeMetadataUpdate:
+def update_existing_video_metadata(
+    video_id: str,
+    require_ai: bool = False,
+) -> YouTubeMetadataUpdate:
     """Update description/tags only while preserving the existing title and snippet settings."""
     youtube = _authorized_youtube_service()
     snippet = _existing_video_snippet(youtube, video_id)
-    metadata = _metadata_for_snippet(video_id, snippet)
+    metadata = _metadata_for_snippet(video_id, snippet, require_ai=require_ai)
     updated_snippet = {
         "title": metadata.title,
         "description": metadata.description,

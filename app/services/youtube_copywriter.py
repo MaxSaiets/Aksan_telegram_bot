@@ -44,6 +44,10 @@ _DETAILS = (
 )
 
 
+class YouTubeCopyGenerationError(RuntimeError):
+    """Raised when a strict batch must not fall back to local copy."""
+
+
 def _fallback_description(seed: str) -> str:
     """Return a deterministic distinct fallback when AI is unavailable."""
     digest = hashlib.sha256(seed.encode("utf-8")).digest()
@@ -63,10 +67,12 @@ def _clean_description(text: str) -> str | None:
     return clean
 
 
-def generate_youtube_description(caption: str, brand: str) -> str:
+def generate_youtube_description(caption: str, brand: str, require_ai: bool = False) -> str:
     """Use Gemini for fresh copy and fall back safely when it is not configured."""
     fallback = _fallback_description(caption)
     if not settings.GEMINI_API_KEY or not settings.YOUTUBE_AI_METADATA_ENABLED:
+        if require_ai:
+            raise YouTubeCopyGenerationError("Gemini is not configured for strict metadata generation")
         return fallback
 
     try:
@@ -117,7 +123,14 @@ def generate_youtube_description(caption: str, brand: str) -> str:
         description = _clean_description(text)
         if description:
             return description
+        if require_ai:
+            raise YouTubeCopyGenerationError("Gemini returned an invalid YouTube description")
         logger.warning("Gemini returned invalid YouTube description; using local fallback")
-    except Exception:
+    except Exception as exc:
+        if require_ai:
+            logger.warning("Gemini YouTube copy generation failed during strict metadata generation")
+            if isinstance(exc, YouTubeCopyGenerationError):
+                raise
+            raise YouTubeCopyGenerationError("Gemini did not return a valid YouTube description") from None
         logger.exception("Gemini YouTube copy generation failed; using local fallback")
     return fallback
