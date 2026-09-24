@@ -101,6 +101,28 @@ def test_copywriter_never_sends_sku_or_size_category_to_gemini(monkeypatch):
     assert "велюр" in prompt
 
 
+def test_copywriter_normalizes_generic_model_word_in_generated_copy(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"candidates": [{"content": {"parts": [{"text": (
+                "Цей виріб показано у відео без зайвих технічних деталей, щоб легше оцінити його в кадрі. "
+                "Огляд допоможе роздивитися річ ближче та звернути увагу на головні акценти."
+            )}]}}]}
+
+    monkeypatch.setattr("app.services.youtube_copywriter.httpx.post", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "key")
+
+    description = generate_youtube_description("26.3065_Aksan_лонгслів", "Aksan", require_ai=True)
+
+    assert "модель" not in description.casefold()
+    assert "виріб" in description
+
+
 def test_strict_copywriter_retries_invalid_generated_text(monkeypatch):
     class FakeResponse:
         status_code = 200

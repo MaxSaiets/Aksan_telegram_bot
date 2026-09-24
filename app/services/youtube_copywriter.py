@@ -77,10 +77,11 @@ def _fallback_description(seed: str) -> str:
 def _clean_description(text: str) -> str | None:
     lines = [line.strip() for line in (text or "").splitlines()]
     clean = "\n".join(line for line in lines if line and "#" not in line).strip()
-    if len(clean) < 120 or len(clean) > 500:
+    clean = re.sub(r"\bмодель\b", "виріб", clean, flags=re.IGNORECASE)
+    if len(clean) < 90 or len(clean) > 500:
         return None
     lowered = clean.casefold()
-    if "модель" in lowered or _SKU_PATTERN.search(clean):
+    if _SKU_PATTERN.search(clean):
         return None
     if any(phrase in lowered for phrase in _BANNED_PHRASES):
         return None
