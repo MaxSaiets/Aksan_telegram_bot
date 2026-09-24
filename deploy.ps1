@@ -14,6 +14,19 @@ if (-not (Test-Path $pythonExe)) {
 
 Set-Location $projectRoot
 
+function Invoke-CheckedCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][scriptblock]$Command
+    )
+
+    Write-Host "Deploy step: $Name"
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Name failed with exit code $LASTEXITCODE"
+    }
+}
+
 function Set-EnvFileValue {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -46,23 +59,21 @@ function Set-EnvFileValue {
 
 Set-EnvFileValue -Path (Join-Path $projectRoot '.env') -Name 'GEMINI_API_KEY' -Value $env:GEMINI_API_KEY
 
-& git -c "safe.directory=$projectRoot" remote set-url origin https://github.com/MaxSaiets/Aksan_telegram_bot.git
-
-& git -c "safe.directory=$projectRoot" fetch origin
-if ($LASTEXITCODE -ne 0) {
-    throw 'git fetch failed'
+Invoke-CheckedCommand -Name 'git remote configuration' -Command {
+    & git -c "safe.directory=$projectRoot" remote set-url origin https://github.com/MaxSaiets/Aksan_telegram_bot.git
 }
-
-& git -c "safe.directory=$projectRoot" reset --hard origin/main
-if ($LASTEXITCODE -ne 0) {
-    throw 'git reset failed'
+Invoke-CheckedCommand -Name 'git fetch' -Command {
+    & git -c "safe.directory=$projectRoot" fetch origin
+}
+Invoke-CheckedCommand -Name 'git reset' -Command {
+    & git -c "safe.directory=$projectRoot" reset --hard origin/main
 }
 
 $shortSha = (& git -c "safe.directory=$projectRoot" rev-parse --short HEAD).Trim()
 
-& $pythonExe -m pip install --upgrade pip
-& $pythonExe -m pip install -r requirements.txt
-& $pythonExe -m pip install telethon cryptg
+Invoke-CheckedCommand -Name 'pip upgrade' -Command { & $pythonExe -m pip install --upgrade pip }
+Invoke-CheckedCommand -Name 'requirements installation' -Command { & $pythonExe -m pip install -r requirements.txt }
+Invoke-CheckedCommand -Name 'optional dependency installation' -Command { & $pythonExe -m pip install telethon cryptg }
 
 Restart-Service aksan_bot_polling
 Restart-Service aksan_bot_worker
