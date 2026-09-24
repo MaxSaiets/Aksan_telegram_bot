@@ -16,6 +16,11 @@ _SKU_PATTERN = re.compile(r"\b\d{2}\.\d{3,5}\b")
 _BANNED_PHRASES = (
     "для комфортних і стильних образів",
     "у відео показані фактура тканини, посадка та деталі виробу",
+    "якісне пошиття",
+    "збереже свій",
+    "після багатьох прань",
+    "приємно прилягає до тіла",
+    "максимальну свободу",
 )
 _LEADS = (
     "Добірка для тих, хто любить продумані речі без зайвого.",
@@ -48,7 +53,7 @@ def _fallback_description(seed: str) -> str:
 def _clean_description(text: str) -> str | None:
     lines = [line.strip() for line in (text or "").splitlines()]
     clean = "\n".join(line for line in lines if line and "#" not in line).strip()
-    if not clean or len(clean) > 650:
+    if len(clean) < 120 or len(clean) > 500:
         return None
     lowered = clean.casefold()
     if "модель" in lowered or _SKU_PATTERN.search(clean):
@@ -67,10 +72,12 @@ def generate_youtube_description(caption: str, brand: str) -> str:
     try:
         instructions = (
             "Ти український e-commerce копірайтер бренду жіночого одягу. "
-            "Напиши свіжий, природний, конкретний опис для YouTube у двох коротких абзацах. "
-            "Не повторюй шаблони, не використовуй штучно-пафосний тон і не згадуй AI. "
-            "Не вигадуй матеріал, фасон, колір, розміри або інші характеристики, яких немає у підписі. "
-            "Не пиши артикул, назву моделі, категорію розмірів, слово 'модель', хештеги, CTA, контакти чи URL. "
+            "Напиши рівно два короткі речення українською, разом від 120 до 500 символів. "
+            "Текст має бути живим, конкретним і відрізнятися від типових описів інших роликів. "
+            "Дозволено згадувати лише бренд, тип виробу, комплектність і матеріал, прямо вказані у підписі. "
+            "Не вигадуй посадку, колір, якість, довговічність, відчуття на тілі, догляд, властивості тканини чи ситуації використання. "
+            "Не ставте запитань і не використовуйте пафос, штампи, рекламні обіцянки або згадку AI. "
+            "Не пиши артикул, назву моделі, категорію розмірів, слово 'модель', хештеги, контакти чи URL. "
             "Не використовуй фрази 'для комфортних і стильних образів' або "
             "'У відео показані фактура тканини, посадка та деталі виробу'."
         )
@@ -78,9 +85,15 @@ def generate_youtube_description(caption: str, brand: str) -> str:
             "systemInstruction": {"parts": [{"text": instructions}]},
             "contents": [{"parts": [{"text": (
                 f"Бренд: {brand}\nПідпис відео: {caption}\n"
+                f"Внутрішній ключ різноманітності: {hashlib.sha256(caption.encode('utf-8')).hexdigest()[:12]}\n"
+                "Не виводь внутрішній ключ у тексті.\n"
                 "Поверни лише готовий текст опису українською."
             )}]}],
-            "generationConfig": {"temperature": 0.9, "maxOutputTokens": 220},
+            # Copywriting is simple; minimal thinking preserves tokens for the actual text.
+            "generationConfig": {
+                "thinkingConfig": {"thinkingLevel": "minimal"},
+                "maxOutputTokens": 500,
+            },
         }
         for attempt in range(3):
             response = httpx.post(

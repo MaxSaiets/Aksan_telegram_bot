@@ -22,7 +22,10 @@ def test_copywriter_uses_gemini_when_configured(monkeypatch):
 
         def json(self):
             return {"candidates": [{"content": {"parts": [{
-                "text": "Живий опис для нового відео.\nБез технічних деталей."
+                "text": (
+                    "Живий опис для нового відео з акцентом на те, що справді вказано у підписі.\n"
+                    "Короткий огляд допомагає побачити виріб ближче без зайвих рекламних обіцянок."
+                )
             }]}}]}
 
     def fake_post(url, **kwargs):
@@ -35,5 +38,6 @@ def test_copywriter_uses_gemini_when_configured(monkeypatch):
     monkeypatch.setattr(settings, "YOUTUBE_METADATA_AI_MODEL", "test-model")
 
     assert generate_youtube_description("26.3065_Aksan_лонгслів", "Aksan") == (
-        "Живий опис для нового відео.\nБез технічних деталей."
+        "Живий опис для нового відео з акцентом на те, що справді вказано у підписі.\n"
+        "Короткий огляд допомагає побачити виріб ближче без зайвих рекламних обіцянок."
     )
