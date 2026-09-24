@@ -119,19 +119,23 @@ def generate_youtube_description(caption: str, brand: str, require_ai: bool = Fa
             # A 429 consumes no useful retry budget: Gemini reports quota exhaustion,
             # so defer the strict batch instead of making two more identical requests.
             if response.status_code not in {500, 502, 503, 504} or attempt == 2:
+                response.raise_for_status()
+                payload = response.json()
+                text = str(
+                    payload.get("candidates", [{}])[0]
+                    .get("content", {})
+                    .get("parts", [{}])[0]
+                    .get("text", "")
+                )
+                description = _clean_description(text)
+                if description:
+                    return description
+                if attempt < 2:
+                    logger.info("Gemini returned invalid YouTube description; requesting a new variant")
+                    time.sleep(attempt + 1)
+                    continue
                 break
             time.sleep(attempt + 1)
-        response.raise_for_status()
-        payload = response.json()
-        text = str(
-            payload.get("candidates", [{}])[0]
-            .get("content", {})
-            .get("parts", [{}])[0]
-            .get("text", "")
-        )
-        description = _clean_description(text)
-        if description:
-            return description
         if require_ai:
             raise YouTubeCopyGenerationError("Gemini returned an invalid YouTube description")
         logger.warning("Gemini returned invalid YouTube description; using local fallback")
