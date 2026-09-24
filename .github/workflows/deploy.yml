@@ -39,6 +39,18 @@ jobs:
             throw 'git reset failed'
           }
 
+      - name: Verify Python runtime
+        shell: powershell
+        run: |
+          $pythonExe = 'C:\bots\telegram_aksan_bot\venv\Scripts\python.exe'
+          if (-not (Test-Path $pythonExe)) {
+            throw "Python venv executable not found: $pythonExe"
+          }
+          & $pythonExe --version
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Python venv is not runnable'
+          }
+
       - name: Deploy on server
         shell: powershell
         run: |
