@@ -14,6 +14,7 @@ from config import settings
 logger = logging.getLogger(__name__)
 _SKU_PATTERN = re.compile(r"(?<!\d)\d{2}\.\d{3,5}(?!\d)")
 _SIZE_CATEGORY_TOKENS = {"норма", "бот", "ботал", "супер", "суперботал"}
+_EXHAUSTED_MODELS: set[str] = set()
 _BANNED_PHRASES = (
     "для комфортних і стильних образів",
     "у відео показані фактура тканини, посадка та деталі виробу",
@@ -54,6 +55,13 @@ def _thinking_config(model: str) -> dict[str, int | str]:
     if model.startswith("gemini-2.5-"):
         return {"thinkingBudget": 0}
     return {"thinkingLevel": "minimal"}
+
+
+def _candidate_models() -> list[str]:
+    configured = [settings.YOUTUBE_METADATA_AI_MODEL]
+    configured.extend(model.strip() for model in settings.YOUTUBE_METADATA_AI_FALLBACK_MODELS.split(","))
+    seen: set[str] = set()
+    return [model for model in configured if model and not (model in seen or seen.add(model))]
 
 
 def _safe_product_context(caption: str, brand: str) -> str:
@@ -109,31 +117,36 @@ def generate_youtube_description(caption: str, brand: str, require_ai: bool = Fa
             "'У відео показані фактура тканини, посадка та деталі виробу'."
         )
         product_context = _safe_product_context(caption, brand)
-        request = {
-            "systemInstruction": {"parts": [{"text": instructions}]},
-            "contents": [{"parts": [{"text": (
-                f"Бренд: {brand}\nКонтекст виробу: {product_context}\n"
-                f"Внутрішній ключ різноманітності: {hashlib.sha256(caption.encode('utf-8')).hexdigest()[:12]}\n"
-                "Не виводь внутрішній ключ у тексті.\n"
-                "Поверни лише готовий текст опису українською."
-            )}]}],
-            # Copywriting is simple; disable/minimize thinking for the selected model family.
-            "generationConfig": {
-                "thinkingConfig": _thinking_config(settings.YOUTUBE_METADATA_AI_MODEL),
-                "maxOutputTokens": 500,
-            },
-        }
-        for attempt in range(3):
-            response = httpx.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{settings.YOUTUBE_METADATA_AI_MODEL}:generateContent",
-                headers={"x-goog-api-key": settings.GEMINI_API_KEY},
-                json=request,
-                timeout=45.0,
-            )
-            # A 429 consumes no useful retry budget: Gemini reports quota exhaustion,
-            # so defer the strict batch instead of making two more identical requests.
-            if response.status_code not in {500, 502, 503, 504} or attempt == 2:
+        for model in _candidate_models():
+            if model in _EXHAUSTED_MODELS:
+                continue
+            request = {
+                "systemInstruction": {"parts": [{"text": instructions}]},
+                "contents": [{"parts": [{"text": (
+                    f"Бренд: {brand}\nКонтекст виробу: {product_context}\n"
+                    f"Внутрішній ключ різноманітності: {hashlib.sha256(caption.encode('utf-8')).hexdigest()[:12]}\n"
+                    "Не виводь внутрішній ключ у тексті.\n"
+                    "Поверни лише готовий текст опису українською."
+                )}]}],
+                "generationConfig": {
+                    "thinkingConfig": _thinking_config(model),
+                    "maxOutputTokens": 500,
+                },
+            }
+            for attempt in range(3):
+                response = httpx.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                    headers={"x-goog-api-key": settings.GEMINI_API_KEY},
+                    json=request,
+                    timeout=45.0,
+                )
+                if response.status_code in {400, 404, 429, 503}:
+                    _EXHAUSTED_MODELS.add(model)
+                    logger.warning("Gemini model %s is unavailable for this batch (HTTP %s)", model, response.status_code)
+                    break
+                if response.status_code in {500, 502, 504} and attempt < 2:
+                    time.sleep(attempt + 1)
+                    continue
                 response.raise_for_status()
                 payload = response.json()
                 parts = payload.get("candidates", [{}])[0].get("content", {}).get("parts", [])
@@ -144,9 +157,8 @@ def generate_youtube_description(caption: str, brand: str, require_ai: bool = Fa
                 if attempt < 2:
                     logger.info("Gemini returned invalid YouTube description; requesting a new variant")
                     time.sleep(attempt + 1)
-                    continue
-                break
-            time.sleep(attempt + 1)
+            else:
+                continue
         if require_ai:
             raise YouTubeCopyGenerationError("Gemini returned an invalid YouTube description")
         logger.warning("Gemini returned invalid YouTube description; using local fallback")

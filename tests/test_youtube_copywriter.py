@@ -191,8 +191,40 @@ def test_strict_copywriter_does_not_retry_quota_exhaustion(monkeypatch):
     calls = []
     monkeypatch.setattr("app.services.youtube_copywriter.httpx.post", lambda *args, **kwargs: calls.append(1) or QuotaResponse())
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "key")
+    monkeypatch.setattr(settings, "YOUTUBE_METADATA_AI_FALLBACK_MODELS", "")
 
     with pytest.raises(YouTubeCopyGenerationError):
         generate_youtube_description("26.3065_Aksan_лонгслів", "Aksan", require_ai=True)
 
     assert calls == [1]
+
+
+def test_copywriter_switches_to_next_model_after_quota_exhaustion(monkeypatch):
+    import app.services.youtube_copywriter as copywriter
+
+    class Response:
+        def __init__(self, status_code, text=""):
+            self.status_code = status_code
+            self.text = text
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise httpx.HTTPStatusError("error", request=None, response=None)
+
+        def json(self):
+            return {"candidates": [{"content": {"parts": [{"text": self.text}]}}]}
+
+    calls = []
+    responses = iter([
+        Response(429),
+        Response(200, "Живий опис для нового відео з акцентом на те, що справді вказано у підписі. Короткий огляд допомагає побачити виріб ближче без зайвих рекламних обіцянок."),
+    ])
+    monkeypatch.setattr("app.services.youtube_copywriter.httpx.post", lambda url, **kwargs: calls.append(url) or next(responses))
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "key")
+    monkeypatch.setattr(settings, "YOUTUBE_METADATA_AI_MODEL", "first-model")
+    monkeypatch.setattr(settings, "YOUTUBE_METADATA_AI_FALLBACK_MODELS", "second-model")
+    monkeypatch.setattr(copywriter, "_EXHAUSTED_MODELS", set())
+
+    assert generate_youtube_description("26.3065_Aksan_лонгслів", "Aksan", require_ai=True).startswith("Живий опис")
+    assert calls[0].endswith("models/first-model:generateContent")
+    assert calls[1].endswith("models/second-model:generateContent")

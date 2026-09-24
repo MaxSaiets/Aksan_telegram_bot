@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     YOUTUBE_TAG_TARGET_CHARACTERS: int = Field(default=490)
     YOUTUBE_AI_METADATA_ENABLED: bool = Field(default=True)
     YOUTUBE_METADATA_AI_MODEL: str = Field(default="gemini-2.5-flash")
+    YOUTUBE_METADATA_AI_FALLBACK_MODELS: str = Field(
+        default="gemini-3.6-flash,gemini-3.7-flash,gemini-3.8-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite"
+    )
     GEMINI_API_KEY: str = Field(default="")
 
     # в”Ђв”Ђ Supabase в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
