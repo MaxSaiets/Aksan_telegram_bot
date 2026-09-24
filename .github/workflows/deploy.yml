@@ -16,11 +16,7 @@ jobs:
       - name: Deploy on server
         shell: powershell
         run: |
-          $projectRoot = if ($env:DEPLOY_PROJECT_ROOT) {
-            $env:DEPLOY_PROJECT_ROOT
-          } else {
-            'C:\bots\telegram_aksan_bot'
-          }
+          $projectRoot = 'C:\bots\telegram_aksan_bot'
 
           if (-not (Test-Path $projectRoot)) {
             throw "Project root not found: $projectRoot"

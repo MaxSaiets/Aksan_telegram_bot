@@ -1,11 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$projectRoot = if ($env:DEPLOY_PROJECT_ROOT) {
-    $env:DEPLOY_PROJECT_ROOT
-} else {
-    $PSScriptRoot
-}
+$projectRoot = $PSScriptRoot
 
 if (-not (Test-Path $projectRoot)) {
     throw "Project root not found: $projectRoot"
