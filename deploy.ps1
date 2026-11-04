@@ -80,6 +80,17 @@ Invoke-CheckedCommand -Name 'pip upgrade' -Command { & $pythonExe -m pip install
 Invoke-CheckedCommand -Name 'requirements installation' -Command { & $pythonExe -m pip install -r requirements.txt }
 Invoke-CheckedCommand -Name 'optional dependency installation' -Command { & $pythonExe -m pip install telethon cryptg }
 
+# First deploy on the local SQLite database: copy the existing Supabase data once.
+$localDb = Join-Path $projectRoot 'dataksan.db'
+if (-not (Test-Path $localDb)) {
+    try {
+        & $pythonExe scripts\migrate_supabase_to_sqlite.py
+        if ($LASTEXITCODE -ne 0) { Write-Warning "Supabase migration exited with code $LASTEXITCODE" }
+    } catch {
+        Write-Warning "Supabase migration failed: $_"
+    }
+}
+
 Restart-Service aksan_bot_polling
 Restart-Service aksan_bot_worker
 & $pythonExe -m app.services.deploy_notify $shortSha

@@ -1,9 +1,11 @@
 """
 Database client abstraction.
-- USE_MOCKS=true  -> SQLite (no credentials needed, file: tmp/mock.db)
-- USE_MOCKS=false -> Supabase (requires SUPABASE_URL + SUPABASE_SERVICE_KEY)
+- USE_MOCKS=true                       -> SQLite, file tmp/mock.db (tests/demo)
+- USE_MOCKS=false, DB_BACKEND=sqlite   -> local SQLite file LOCAL_DB_PATH (default)
+- USE_MOCKS=false, DB_BACKEND=supabase -> Supabase (SUPABASE_URL + SUPABASE_SERVICE_KEY)
 """
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,21 +16,34 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _MOCK_DB_PATH = Path("tmp/mock.db")
+
+
+def _local_db_path() -> Path:
+    path = Path(settings.LOCAL_DB_PATH)
+    return path if path.is_absolute() else _PROJECT_ROOT / path
 
 
 class _MockDBClient:
     """In-process SQLite that mirrors the Supabase schema."""
 
-    def __init__(self):
+    def __init__(self, path: Path | None = None):
         self._conn: sqlite3.Connection | None = None
+        self._path = path
+        self._lock = threading.RLock()
 
     def init(self):
-        _MOCK_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(_MOCK_DB_PATH), check_same_thread=False)
+        path = self._path or _MOCK_DB_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # The bot (polling) and the Celery worker are separate processes that
+        # share this file: WAL + a busy timeout keep concurrent access safe.
+        self._conn = sqlite3.connect(str(path), check_same_thread=False, timeout=30)
         self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=30000")
         self._create_tables()
-        logger.info("[MOCK DB] SQLite ready at %s", _MOCK_DB_PATH)
+        logger.info("[SQLite DB] ready at %s", path)
 
     def _create_tables(self):
         self._conn.executescript("""
@@ -104,57 +119,61 @@ class _MockDBClient:
             self.init()
 
     def insert(self, table: str, data: dict) -> dict:
-        self._ensure_init()
-        data = {**data}
-        if "id" not in data:
-            data["id"] = str(uuid.uuid4())
-        if "created_at" not in data:
-            data["created_at"] = self._now()
-        if table == "videos":
-            data.setdefault("updated_at", self._now())
+        with self._lock:
+            self._ensure_init()
+            data = {**data}
+            if "id" not in data:
+                data["id"] = str(uuid.uuid4())
+            if "created_at" not in data:
+                data["created_at"] = self._now()
+            if table == "videos":
+                data.setdefault("updated_at", self._now())
 
-        cols = ", ".join(data.keys())
-        placeholders = ", ".join("?" for _ in data)
-        self._conn.execute(
-            f"INSERT OR REPLACE INTO {table} ({cols}) VALUES ({placeholders})",
-            list(data.values()),
-        )
-        self._conn.commit()
-        logger.debug("[MOCK DB] INSERT %s id=%s", table, data.get("id"))
-        return data
+            cols = ", ".join(data.keys())
+            placeholders = ", ".join("?" for _ in data)
+            self._conn.execute(
+                f"INSERT OR REPLACE INTO {table} ({cols}) VALUES ({placeholders})",
+                list(data.values()),
+            )
+            self._conn.commit()
+            logger.debug("[MOCK DB] INSERT %s id=%s", table, data.get("id"))
+            return data
 
     def select(self, table: str, filters: dict | None = None) -> list[dict]:
-        self._ensure_init()
-        query = f"SELECT * FROM {table}"
-        params: list[Any] = []
-        if filters:
-            clauses = " AND ".join(f"{k} = ?" for k in filters)
-            query += f" WHERE {clauses}"
-            params = list(filters.values())
-        rows = self._conn.execute(query, params).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            self._ensure_init()
+            query = f"SELECT * FROM {table}"
+            params: list[Any] = []
+            if filters:
+                clauses = " AND ".join(f"{k} = ?" for k in filters)
+                query += f" WHERE {clauses}"
+                params = list(filters.values())
+            rows = self._conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
 
     def update(self, table: str, filters: dict, data: dict) -> dict | None:
-        self._ensure_init()
-        data = {**data, "updated_at": self._now()}
-        set_clause = ", ".join(f"{k} = ?" for k in data)
-        where_clause = " AND ".join(f"{k} = ?" for k in filters)
-        self._conn.execute(
-            f"UPDATE {table} SET {set_clause} WHERE {where_clause}",
-            list(data.values()) + list(filters.values()),
-        )
-        self._conn.commit()
-        rows = self.select(table, filters)
-        return rows[0] if rows else None
+        with self._lock:
+            self._ensure_init()
+            data = {**data, "updated_at": self._now()}
+            set_clause = ", ".join(f"{k} = ?" for k in data)
+            where_clause = " AND ".join(f"{k} = ?" for k in filters)
+            self._conn.execute(
+                f"UPDATE {table} SET {set_clause} WHERE {where_clause}",
+                list(data.values()) + list(filters.values()),
+            )
+            self._conn.commit()
+            rows = self.select(table, filters)
+            return rows[0] if rows else None
 
     def delete(self, table: str, filters: dict) -> None:
-        self._ensure_init()
-        where_clause = " AND ".join(f"{k} = ?" for k in filters)
-        self._conn.execute(
-            f"DELETE FROM {table} WHERE {where_clause}",
-            list(filters.values()),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._ensure_init()
+            where_clause = " AND ".join(f"{k} = ?" for k in filters)
+            self._conn.execute(
+                f"DELETE FROM {table} WHERE {where_clause}",
+                list(filters.values()),
+            )
+            self._conn.commit()
 
 
 class _SupabaseClient:
@@ -191,6 +210,12 @@ class _SupabaseClient:
         q.execute()
 
 
-db_client: _MockDBClient | _SupabaseClient = (
-    _MockDBClient() if settings.USE_MOCKS else _SupabaseClient()
-)
+def _build_client() -> "_MockDBClient | _SupabaseClient":
+    if settings.USE_MOCKS:
+        return _MockDBClient()
+    if settings.DB_BACKEND.strip().lower() == "supabase":
+        return _SupabaseClient()
+    return _MockDBClient(_local_db_path())
+
+
+db_client: _MockDBClient | _SupabaseClient = _build_client()

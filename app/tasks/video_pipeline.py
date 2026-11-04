@@ -20,6 +20,7 @@ from app.database.videos_repo import (
 from app.services.telegram_sender import broadcast_to_group, send_text
 from app.services.video_editor import overlay_text
 from app.services.youtube_metadata import build_youtube_metadata
+from app.services.video_schedule import release_publication_slot, reserve_publication_slot
 from app.services.youtube_uploader import upload_to_youtube
 from app.tasks.celery_app import celery_app
 from app.telegram.keyboard import main_menu_keyboard
@@ -141,6 +142,7 @@ def run_video_pipeline(
 
     local_path: Path | None = None
     processed_path: Path | None = None
+    group_sent = False
 
     try:
         set_processing(video_id)
@@ -163,29 +165,36 @@ def run_video_pipeline(
         if _cancelled():
             return {"status": "cancelled", "video_id": video_id}
 
-        _status(chat_id, 2, total_steps, "Завантажую на YouTube...")
-        youtube_metadata = build_youtube_metadata(caption)
-        scheduled_at = datetime.fromisoformat(publish_at) if publish_at else None
-        youtube_url = upload_to_youtube(
-            local_path,
-            title=youtube_metadata.title,
-            description=youtube_metadata.description,
-            tags=youtube_metadata.tags,
-            publish_at=scheduled_at,
-        )
-        logger.info("YouTube URL: %s", youtube_url)
-
-        if _cancelled():
-            return {"status": "cancelled", "video_id": video_id}
-
-        _status(chat_id, 3, total_steps, "Монтую відео...")
+        _status(chat_id, 2, total_steps, "Монтую відео...")
         processed_path = overlay_text(local_path, caption)
 
         if _cancelled():
             return {"status": "cancelled", "video_id": video_id}
 
-        _status(chat_id, 4, total_steps, "Надсилаю в цільову групу...")
+        # Telegram group first: the video must appear there immediately.
+        _status(chat_id, 3, total_steps, "Публікую в групі Telegram...")
         group_message_id = _async(broadcast_to_group(processed_path, caption))
+        group_sent = True
+
+        _status(chat_id, 4, total_steps, "Завантажую на YouTube...")
+        scheduled_at = datetime.fromisoformat(publish_at) if publish_at else None
+        reserved_slot = None
+        if scheduled_at is None and not settings.USE_MOCKS:
+            scheduled_at = reserved_slot = reserve_publication_slot()
+        try:
+            youtube_metadata = build_youtube_metadata(caption)
+            youtube_url = upload_to_youtube(
+                local_path,
+                title=youtube_metadata.title,
+                description=youtube_metadata.description,
+                tags=youtube_metadata.tags,
+                publish_at=scheduled_at,
+            )
+        except Exception:
+            if reserved_slot is not None:
+                release_publication_slot(reserved_slot)
+            raise
+        logger.info("YouTube URL: %s", youtube_url)
 
         set_done(video_id, youtube_url, settings.TELEGRAM_TARGET_CHAT_ID, group_message_id)
         schedule_note = ""
@@ -203,6 +212,16 @@ def run_video_pipeline(
     except Exception as exc:
         set_error(video_id, str(exc))
         logger.exception("Pipeline FAILED | video_id=%s | %s", video_id, exc)
+
+        if group_sent:
+            _notify(
+                chat_id,
+                "⚠️ Відео вже опубліковано в групі Telegram, але на YouTube "
+                f"завантажити не вдалося: {_diagnose_error(exc) or exc}\n\n"
+                "Повторний запуск не робився, щоб не дублювати пост у групі.",
+                reply_markup=main_menu_keyboard(),
+            )
+            return {"status": "youtube_error", "video_id": video_id, "error": str(exc)}
 
         error_msg = _diagnose_error(exc)
         attempt = self.request.retries + 1

@@ -362,12 +362,10 @@ async def btn_send_video(message: Message, state: FSMContext) -> None:
     await state.set_state(VideoUpload.waiting_video)
     await state.update_data(queue_count=0, pending_videos=[])
     await message.answer(
-        "Надішліть усі відео пачкою.\n\n"
-        "Після останнього ролика:\n"
-        "• надішліть `готово`, якщо кожен ролик уже має підпис; або\n"
-        "• надішліть назви по одній на рядок у тому самому порядку, що й відео.\n\n"
-        "Я завантажу їх приватно та запланую публікації на YouTube за київським часом. "
-        "До трьох роликів на день, з інтервалом щонайменше п'ять годин.",
+        "Надсилайте відео з підписом — кожне одразу піде в групу Telegram.\n"
+        "На YouTube вони виходять за розкладом: 2 відео на день, починаючи з сьогодні.\n\n"
+        "Якщо в відео немає підпису — надішліть назву окремим повідомленням.\n"
+        "Кнопку «готово» тиснути не потрібно.",
         parse_mode="Markdown",
     )
 
@@ -388,23 +386,46 @@ async def btn_send_photos(message: Message, state: FSMContext) -> None:
     )
 
 
+def _dispatch_video(chat_id: int | str, item: dict, caption: str) -> str:
+    """Start processing right away: group post now, YouTube at the next free slot."""
+    from app.tasks.video_pipeline import run_video_pipeline
+
+    task = run_video_pipeline.delay(
+        chat_id=str(chat_id),
+        file_id=item["file_id"],
+        caption=caption,
+        message_id=item.get("message_id"),
+    )
+    return task.id
+
+
 @router.message(VideoUpload.waiting_video, F.video)
 async def handle_video(message: Message, state: FSMContext) -> None:
     file_id = message.video.file_id
     caption = (message.caption or "").strip()
+    item = {"file_id": file_id, "caption": caption, "message_id": message.message_id}
+
+    if caption:
+        _dispatch_video(message.chat.id, item, caption)
+        async with _video_lock(message.chat.id):
+            data = await state.get_data()
+            queue_count = int(data.get("queue_count", 0)) + 1
+            await state.update_data(queue_count=queue_count)
+        await message.answer(
+            f"✅ Відео #{queue_count} прийнято: публікую в групу зараз, "
+            "на YouTube — за розкладом (2 відео на день)."
+        )
+        return
+
     async with _video_lock(message.chat.id):
         data = await state.get_data()
         pending = list(data.get("pending_videos", []))
-        pending.append({
-            "file_id": file_id,
-            "caption": caption,
-            "message_id": message.message_id,
-        })
-        queue_count = len(pending)
-        await state.update_data(queue_count=queue_count, pending_videos=pending)
-
-    suffix = "" if caption else " Назву додайте фінальним списком."
-    await message.answer(f"Відео #{queue_count} додано до пачки.{suffix}")
+        pending.append(item)
+        await state.update_data(pending_videos=pending)
+    await message.answer(
+        f"Відео без підпису ({len(pending)} в очікуванні). "
+        "Надішліть назву текстом (по одній на рядок, якщо відео кілька)."
+    )
 
 
 def _resolve_batch_captions(items: list[dict], text: str) -> list[str] | None:
@@ -449,31 +470,13 @@ async def handle_video_batch_titles(message: Message, state: FSMContext) -> None
         )
         return
 
-    from app.services.video_schedule import plan_publication_times
-    from app.tasks.video_pipeline import run_video_pipeline
+    for item, caption in zip(items, captions):
+        _dispatch_video(message.chat.id, item, caption)
 
-    slots = plan_publication_times(len(items))
-    task_ids: list[str] = []
-    for item, caption, slot in zip(items, captions, slots):
-        task = run_video_pipeline.delay(
-            chat_id=str(message.chat.id),
-            file_id=item["file_id"],
-            caption=caption,
-            message_id=item.get("message_id"),
-            publish_at=slot.isoformat(),
-        )
-        task_ids.append(task.id)
-
-    await state.clear()
-    preview_lines = [
-        f"{index}. {slot.strftime('%d.%m %H:%M')} - {caption[:45]}"
-        for index, (slot, caption) in enumerate(zip(slots, captions), start=1)
-    ]
+    await state.update_data(pending_videos=[])
     await message.answer(
-        f"✅ Заплановано {len(items)} відео для YouTube.\n\n"
-        + "\n".join(preview_lines)
-        + "\n\nРолики завантажаться приватно, а YouTube опублікує їх у цей час "
-        "за Києвом.",
+        f"✅ Прийнято {len(items)} відео: публікую в групу зараз, "
+        "на YouTube — за розкладом (2 відео на день).",
         reply_markup=main_menu_keyboard(),
     )
 

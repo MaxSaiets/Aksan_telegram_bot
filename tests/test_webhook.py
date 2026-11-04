@@ -100,21 +100,28 @@ class TestRouterHandlers:
         state.set_state.assert_awaited_once_with(PhotoUpload.waiting_photos)
         state.update_data.assert_awaited_once_with(photo_file_ids=[], photo_count=0)
 
-    def test_handle_video_collects_a_batch_item(self):
+    def test_handle_video_with_caption_starts_pipeline_immediately(self):
         from app.telegram.router import handle_video
 
-        msg = _make_mock_message(video={"file_id": "tg_file_id_abc123"}, caption="20.8934_РЅРѕСЂРјР°")
+        msg = _make_mock_message(video={"file_id": "tg_file_id_abc123"}, caption="20.8934_norma")
         state = _make_mock_state(data={"queue_count": 0})
-        asyncio.run(handle_video(msg, state))
+        with patch("app.telegram.router._dispatch_video") as dispatch:
+            asyncio.run(handle_video(msg, state))
 
-        state.update_data.assert_awaited_once_with(
-            queue_count=1,
-            pending_videos=[{
-                "file_id": "tg_file_id_abc123",
-                "caption": "20.8934_РЅРѕСЂРјР°",
-                "message_id": 1,
-            }],
-        )
+        dispatch.assert_called_once()
+        assert dispatch.call_args.args[2] == "20.8934_norma"
+        state.update_data.assert_awaited_once_with(queue_count=1)
+
+    def test_handle_video_without_caption_waits_for_title(self):
+        from app.telegram.router import handle_video
+
+        msg = _make_mock_message(video={"file_id": "tg_file_id_abc123"}, caption=None)
+        state = _make_mock_state(data={"queue_count": 0})
+        with patch("app.telegram.router._dispatch_video") as dispatch:
+            asyncio.run(handle_video(msg, state))
+
+        dispatch.assert_not_called()
+        state.update_data.assert_awaited_once()
 
     def test_batch_title_list_fills_videos_without_captions(self):
         from app.telegram.router import _resolve_batch_captions

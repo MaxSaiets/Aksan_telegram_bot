@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = Field(default="")
 
     # в”Ђв”Ђ Supabase в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+    # "sqlite" = local file (no external service); "supabase" = legacy cloud DB
+    DB_BACKEND: str = Field(default="sqlite")
+    LOCAL_DB_PATH: str = Field(default="data/aksan.db")
     SUPABASE_URL: str = Field(default="https://mock.supabase.co")
     SUPABASE_SERVICE_KEY: str = Field(default="MOCK_SUPABASE_KEY")
 
