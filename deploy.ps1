@@ -81,7 +81,7 @@ Invoke-CheckedCommand -Name 'requirements installation' -Command { & $pythonExe 
 Invoke-CheckedCommand -Name 'optional dependency installation' -Command { & $pythonExe -m pip install telethon cryptg }
 
 # First deploy on the local SQLite database: copy the existing Supabase data once.
-$localDb = Join-Path $projectRoot 'dataksan.db'
+$localDb = Join-Path $projectRoot 'data\aksan.db'
 if (-not (Test-Path $localDb)) {
     try {
         & $pythonExe scripts\migrate_supabase_to_sqlite.py
